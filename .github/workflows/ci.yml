@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Generate transport stream fixture
+        run: ./tool/generate_sample_ts.sh
+
+      - name: go test
+        run: go test ./...
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Build image
+        run: docker build -t satip-lab:ci .
+
+      - name: Smoke test container
+        run: |
+          trap 'docker rm -f satip-lab-ci >/dev/null 2>&1 || true' EXIT
+          docker run -d --name satip-lab-ci \
+            --network host \
+            -e SATIP_LAB_PUBLIC_HOST=127.0.0.1 \
+            -e SATIP_LAB_HTTP_PORT=18875 \
+            -e SATIP_LAB_RTSP_PORT=1554 \
+            -e SATIP_LAB_SSDP_PORT=0 \
+            -e SATIP_LAB_PROFILE=tvheadend \
+            satip-lab:ci
+          sleep 2
+          curl -fsS http://127.0.0.1:18875/satip_server/desc.xml | grep -q 'TVHeadend'
+          curl -fsS http://127.0.0.1:18875/channellist.m3u | grep -q 'ZDF HD'
+          go run ./cmd/satip-lab-smoke --host 127.0.0.1 --rtsp-port 1554

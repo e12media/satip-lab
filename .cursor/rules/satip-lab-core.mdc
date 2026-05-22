@@ -1,0 +1,23 @@
+---
+description: satip-lab project context and working rules for all agent sessions
+alwaysApply: true
+---
+
+# satip-lab core context
+
+Read `AGENTS.md` at repo root before making changes.
+
+- **English only** for docs, comments, commits, PRs, and agent replies (US spelling preferred).
+- Don’t assume. Don’t hide confusion. Surface tradeoffs.
+- Minimum code that solves the problem. Nothing speculative.
+- Touch only what you must. Clean up only your own mess.
+- Define success criteria. Loop until verified.
+- This repo is a **SAT>IP lab server** (Go), not a client app and not a full SAT>IP implementation.
+- Lab state: `internal/lab/` (catalog, tuners, sessions); JSON API on HTTP — see `docs/api.md`.
+- Run `make test` before claiming work is complete.
+- RTSP responses must use `\r\n\r\n` line endings.
+- Do not expand scope into full spec or TCP interleaved RTSP without explicit request.
+- Update `docs/supported-profile.md` and `docs/api.md` when user-visible simulation or lab API behavior changes.
+- Agent branches: `codex/<topic>`.
+
+Quick layout: `cmd/satip-lab` (main), `cmd/satip-lab-smoke`, `internal/{config,channels,lab,httpserver,ssdp,rtsp,ts,simulator,smoke}`.

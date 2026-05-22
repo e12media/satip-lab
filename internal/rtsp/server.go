@@ -1,0 +1,654 @@
+package rtsp
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"net"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/e12media/satip-lab/internal/config"
+	"github.com/e12media/satip-lab/internal/epg"
+	"github.com/e12media/satip-lab/internal/lab"
+	"github.com/e12media/satip-lab/internal/ts"
+	"github.com/e12media/satip-lab/internal/vendorprofile"
+)
+
+var clientPortPattern = regexp.MustCompile(`(?i)client_port=(\d+)-(\d+)`)
+var destinationPattern = regexp.MustCompile(`(?i)destination=([^;]+)`)
+
+const slowRTSPDelay = 250 * time.Millisecond
+const rtspSessionTimeout = 60 * time.Second
+
+type Server struct {
+	cfg           config.Config
+	vendorProfile vendorprofile.Profile
+	streamSource  *ts.Source
+	lab           *lab.Manager
+
+	listener  net.Listener
+	sessions  map[string]*session
+	sessionMu sync.Mutex
+	nextID    int
+	stopCh    chan struct{}
+	stopOnce  sync.Once
+}
+
+func NewServer(cfg config.Config, streamSource *ts.Source, labManager *lab.Manager) *Server {
+	if labManager == nil {
+		labManager = lab.NewManager(lab.DefaultCatalog(), cfg.TunerCount)
+	}
+	return &Server{
+		cfg:           cfg,
+		vendorProfile: cfg.CompatibilityProfile(),
+		streamSource:  streamSource,
+		lab:           labManager,
+		sessions:      make(map[string]*session),
+		stopCh:        make(chan struct{}),
+	}
+}
+
+func (s *Server) Start() error {
+	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", s.cfg.BindAddress, s.cfg.RTSPPort))
+	if err != nil {
+		return err
+	}
+	s.listener = ln
+	s.startSessionReaper(5*time.Second, time.Now)
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go s.handleConn(conn)
+		}
+	}()
+	return nil
+}
+
+func (s *Server) Stop() error {
+	s.stopOnce.Do(func() {
+		close(s.stopCh)
+	})
+	s.Reset()
+
+	if s.listener != nil {
+		return s.listener.Close()
+	}
+	return nil
+}
+
+func (s *Server) Reset() {
+	s.sessionMu.Lock()
+	for _, sess := range s.sessions {
+		sess.stopStreaming()
+	}
+	s.sessions = make(map[string]*session)
+	s.sessionMu.Unlock()
+}
+
+func (s *Server) handleConn(conn net.Conn) {
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+	state := &connectionState{}
+
+	for {
+		req, err := readRequest(reader)
+		if err != nil {
+			return
+		}
+		resp := s.handleRequestWithState(conn, req, state)
+		_, _ = conn.Write([]byte(resp))
+	}
+}
+
+type connectionState struct {
+	described bool
+}
+
+func (s *Server) handleRequest(conn net.Conn, req request) string {
+	return s.handleRequestWithState(conn, req, &connectionState{})
+}
+
+func (s *Server) handleRequestWithState(conn net.Conn, req request, state *connectionState) string {
+	cseq := req.headers["cseq"]
+	if cseq == "" {
+		cseq = "0"
+	}
+	s.expireSessions(time.Now().UTC())
+	s.touchRequestSession(req, time.Now().UTC())
+
+	if req.method == "DESCRIBE" && state != nil {
+		state.described = true
+	}
+	if s.vendorProfile.RequireDescribeBeforeSetup && req.method == "SETUP" && (state == nil || !state.described) {
+		return buildResponse(cseq, "455 Method Not Valid in This State", []string{
+			"Reason: DESCRIBE required before SETUP",
+		})
+	}
+	if s.cfg.Scenario == config.ScenarioTunerBusy && req.method == "SETUP" {
+		return buildResponse(cseq, s.vendorProfile.TunerBusyStatus, []string{
+			"Reason: tuner busy (simulated scenario)",
+		})
+	}
+	if s.lab.Scenario().Name == lab.ScenarioSlowRTSP {
+		time.Sleep(slowRTSPDelay)
+	}
+
+	switch req.method {
+	case "OPTIONS":
+		return buildResponse(cseq, "200 OK", []string{
+			"Public: OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN, GET_PARAMETER",
+		})
+	case "DESCRIBE":
+		return s.handleDescribe(cseq)
+	case "SETUP":
+		return s.handleSetup(conn, req, cseq)
+	case "PLAY":
+		return s.handlePlay(req, cseq)
+	case "PAUSE":
+		return s.handlePause(req, cseq)
+	case "TEARDOWN":
+		return s.handleTeardown(req, cseq)
+	case "GET_PARAMETER":
+		return s.handleGetParameter(req, cseq)
+	default:
+		return buildResponse(cseq, "501 Not Implemented", nil)
+	}
+}
+
+func (s *Server) handleDescribe(cseq string) string {
+	body := strings.Join([]string{
+		"v=0",
+		fmt.Sprintf("o=- 0 0 IN IP4 %s", s.cfg.PublicHost),
+		"s=SAT>IP Lab Server",
+		"t=0 0",
+		"a=control:*",
+		"m=video 0 RTP/AVP 33",
+		"a=rtpmap:33 MP2T/90000",
+		"a=control:stream=0",
+		"",
+	}, "\r\n")
+	return buildResponseWithBody(cseq, "200 OK", []string{
+		"Content-Type: application/sdp",
+	}, body)
+}
+
+func (s *Server) handleSetup(conn net.Conn, req request, cseq string) string {
+	s.sessionMu.Lock()
+	s.nextID++
+	sessionID := fmt.Sprintf("%08d", s.nextID)
+	s.sessionMu.Unlock()
+
+	transport := parseTransport(req.headers["transport"])
+	remote := conn.RemoteAddr().(*net.TCPAddr)
+	rawQuery := tuningQueryFromURI(req.uri)
+	setup, err := s.lab.Setup(sessionID, rawQuery, remote.IP.String())
+	if err != nil {
+		switch err {
+		case lab.ErrNoTunerAvailable:
+			return buildResponse(cseq, s.vendorProfile.TunerBusyStatus, []string{"Reason: tuner busy"})
+		case lab.ErrNoSignal:
+			return buildResponse(cseq, "503 Service Unavailable", []string{"Reason: no signal"})
+		case lab.ErrServiceNotFound:
+			return buildResponse(cseq, "404 Not Found", []string{"Reason: service not found"})
+		default:
+			return buildResponse(cseq, "400 Bad Request", []string{"Reason: invalid tuning"})
+		}
+	}
+	sess := &session{
+		id:            sessionID,
+		clientIP:      transport.destination(remote.IP),
+		clientRTPPort: transport.rtpPort,
+		clientRTCPort: transport.rtcpPort,
+		service:       setup.Service,
+	}
+	s.sessionMu.Lock()
+	s.sessions[sessionID] = sess
+	s.sessionMu.Unlock()
+
+	return buildResponse(cseq, "200 OK", []string{
+		s.setupSessionHeader(sessionID),
+		fmt.Sprintf(
+			"%s: RTP/AVP;unicast;destination=%s;source=%s;client_port=%d-%d;server_port=5000-5001",
+			s.vendorProfile.TransportHeader,
+			sess.clientIP.String(), s.cfg.PublicHost, transport.rtpPort, transport.rtcpPort,
+		),
+	})
+}
+
+func (s *Server) handlePlay(req request, cseq string) string {
+	sessionID := sessionIDFrom(req.headers["session"])
+	if sessionID == "" {
+		return buildResponse(cseq, "454 Session Not Found", nil)
+	}
+
+	sess, ok := s.sessionByID(sessionID)
+	if !ok {
+		return buildResponse(cseq, "454 Session Not Found", nil)
+	}
+	if err := s.lab.UpdatePIDs(sessionID, tuningQueryFromURI(req.uri)); err != nil {
+		return buildResponse(cseq, "400 Bad Request", []string{"Reason: invalid pid update"})
+	}
+
+	setup, err := s.lab.Play(sessionID)
+	if err != nil {
+		return buildResponse(cseq, "454 Session Not Found", nil)
+	}
+	profile := ts.ServiceProfile{
+		ID:        setup.Service.ID,
+		Name:      setup.Service.Name,
+		ServiceID: setup.Service.ServiceID,
+		PMTPID:    setup.Service.PMTPID,
+		VideoPID:  setup.Service.VideoPID,
+		AudioPID:  setup.Service.AudioPID,
+	}
+	payload, err := s.playPayload(profile, setup.Service, setup.Mux)
+	if err != nil {
+		return buildResponse(cseq, "500 Internal Server Error", nil)
+	}
+	sess.startStreaming(payload, NewRTPSender(), s.streamBehavior(setup.Service, setup.Mux))
+
+	return buildResponse(cseq, "200 OK", s.sessionHeaders(sessionID))
+}
+
+func (s *Server) handlePause(req request, cseq string) string {
+	sessionID := sessionIDFrom(req.headers["session"])
+	if sessionID == "" {
+		return buildResponse(cseq, "454 Session Not Found", nil)
+	}
+
+	sess, ok := s.sessionByID(sessionID)
+	if !ok {
+		return buildResponse(cseq, "454 Session Not Found", nil)
+	}
+	sess.stopStreaming()
+	if err := s.lab.Pause(sessionID); err != nil {
+		return buildResponse(cseq, "454 Session Not Found", nil)
+	}
+	return buildResponse(cseq, "200 OK", s.sessionHeaders(sessionID))
+}
+
+func (s *Server) streamBehavior(service lab.Service, mux lab.Mux) streamBehavior {
+	scenario := s.lab.Scenario()
+	if !scenario.AppliesTo(service, mux) {
+		return streamBehavior{}
+	}
+	switch scenario.Name {
+	case lab.ScenarioRTPStop:
+		return streamBehavior{packetLimit: 3}
+	case lab.ScenarioRTPLoss:
+		return streamBehavior{dropEvery: 3}
+	case lab.ScenarioRTPJitter:
+		return streamBehavior{jitterEvery: 3, jitterDelay: 40 * time.Millisecond}
+	default:
+		return streamBehavior{}
+	}
+}
+
+func (s *Server) playPayload(profile ts.ServiceProfile, service lab.Service, mux lab.Mux) ([]byte, error) {
+	scenario := s.lab.Scenario()
+	clock, err := epg.ParseClock(s.cfg.EPGClock)
+	if err != nil {
+		return nil, err
+	}
+	eit := ts.EITOptions{Now: clock.Now}
+	if scenario.Name == lab.ScenarioEPGGap && scenario.AppliesTo(service, mux) {
+		eit.Suppress = true
+	}
+	payload, err := s.streamSource.LoadServicePayloadWithOptions(profile, eit)
+	if err != nil {
+		return nil, err
+	}
+	if !scenario.AppliesTo(service, mux) {
+		return payload, nil
+	}
+	switch scenario.Name {
+	case lab.ScenarioMalformedPSI:
+		return ts.MalformedPSI(payload), nil
+	case lab.ScenarioContinuityErrors:
+		return ts.ContinuityCounterErrors(payload), nil
+	default:
+		return payload, nil
+	}
+}
+
+func (s *Server) handleTeardown(req request, cseq string) string {
+	sessionID := sessionIDFrom(req.headers["session"])
+	if sessionID != "" {
+		s.stopAndDeleteSession(sessionID)
+		s.lab.Teardown(sessionID)
+	}
+	if sessionID != "" {
+		return buildResponse(cseq, "200 OK", s.sessionHeaders(sessionID))
+	}
+	return buildResponse(cseq, "200 OK", nil)
+}
+
+func (s *Server) handleGetParameter(req request, cseq string) string {
+	sessionID := sessionIDFrom(req.headers["session"])
+	if sessionID == "" {
+		return buildResponse(cseq, "454 Session Not Found", nil)
+	}
+	if _, ok := s.sessionByID(sessionID); !ok {
+		return buildResponse(cseq, "454 Session Not Found", nil)
+	}
+	return buildResponse(cseq, "200 OK", s.sessionHeaders(sessionID))
+}
+
+func (s *Server) touchRequestSession(req request, now time.Time) {
+	sessionID := sessionIDFrom(req.headers["session"])
+	if sessionID == "" {
+		return
+	}
+	if _, ok := s.sessionByID(sessionID); !ok {
+		return
+	}
+	_ = s.lab.Touch(sessionID, now)
+}
+
+func (s *Server) startSessionReaper(interval time.Duration, now func() time.Time) {
+	if interval <= 0 {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-s.stopCh:
+				return
+			case <-ticker.C:
+				s.expireSessions(now())
+			}
+		}
+	}()
+}
+
+func (s *Server) expireSessions(now time.Time) {
+	expired := s.lab.ExpireSessions(now.UTC(), rtspSessionTimeout)
+	if len(expired) == 0 {
+		return
+	}
+	expiredSet := make(map[string]struct{}, len(expired))
+	for _, sessionID := range expired {
+		expiredSet[sessionID] = struct{}{}
+	}
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	for sessionID := range expiredSet {
+		if sess, ok := s.sessions[sessionID]; ok {
+			sess.stopStreaming()
+			delete(s.sessions, sessionID)
+		}
+	}
+}
+
+func (s *Server) sessionByID(sessionID string) (*session, bool) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	sess, ok := s.sessions[sessionID]
+	return sess, ok
+}
+
+func (s *Server) stopAndDeleteSession(sessionID string) {
+	s.sessionMu.Lock()
+	sess, ok := s.sessions[sessionID]
+	if ok {
+		delete(s.sessions, sessionID)
+	}
+	s.sessionMu.Unlock()
+	if ok {
+		sess.stopStreaming()
+	}
+}
+
+type session struct {
+	id            string
+	clientIP      net.IP
+	clientRTPPort int
+	clientRTCPort int
+	service       lab.Service
+
+	streamMu sync.Mutex
+	udpConn  *net.UDPConn
+	stopCh   chan struct{}
+}
+
+type streamBehavior struct {
+	packetLimit int
+	dropEvery   int
+	jitterEvery int
+	jitterDelay time.Duration
+}
+
+func (b streamBehavior) shouldDrop(packetNumber int) bool {
+	return b.dropEvery > 0 && packetNumber%b.dropEvery == 0
+}
+
+func (b streamBehavior) jitterFor(packetNumber int) time.Duration {
+	if b.jitterEvery > 0 && packetNumber%b.jitterEvery == 0 {
+		return b.jitterDelay
+	}
+	return 0
+}
+
+func (s *session) startStreaming(payload []byte, sender *RTPSender, behavior streamBehavior) {
+	s.streamMu.Lock()
+	defer s.streamMu.Unlock()
+	s.stopStreamingLocked()
+
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
+	if err != nil {
+		return
+	}
+	s.udpConn = conn
+	stopCh := make(chan struct{})
+	s.stopCh = stopCh
+
+	dest := &net.UDPAddr{IP: s.clientIP, Port: s.clientRTPPort}
+	source := &ts.Source{}
+
+	go func() {
+		offset := 0
+		sent := 0
+		packetNumber := 0
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-ticker.C:
+				chunk, next := source.ChunkAt(payload, offset)
+				if len(chunk) > 0 {
+					packetNumber++
+					if !behavior.shouldDrop(packetNumber) {
+						if jitter := behavior.jitterFor(packetNumber); jitter > 0 {
+							time.Sleep(jitter)
+						}
+						_ = sender.Send(conn, dest, chunk)
+						sent++
+						if behavior.packetLimit > 0 && sent >= behavior.packetLimit {
+							s.finishStreaming(conn, stopCh)
+							return
+						}
+					} else {
+						sender.Skip()
+					}
+				}
+				offset = next
+			}
+		}
+	}()
+}
+
+func (s *session) streamingActive() bool {
+	s.streamMu.Lock()
+	defer s.streamMu.Unlock()
+	return s.udpConn != nil
+}
+
+func (s *session) finishStreaming(conn *net.UDPConn, stopCh chan struct{}) {
+	s.streamMu.Lock()
+	defer s.streamMu.Unlock()
+	if s.stopCh != stopCh {
+		return
+	}
+	if s.udpConn == conn {
+		_ = s.udpConn.Close()
+		s.udpConn = nil
+	}
+	s.stopCh = nil
+}
+
+func (s *session) stopStreaming() {
+	s.streamMu.Lock()
+	defer s.streamMu.Unlock()
+	s.stopStreamingLocked()
+}
+
+func (s *session) stopStreamingLocked() {
+	if s.stopCh != nil {
+		close(s.stopCh)
+		s.stopCh = nil
+	}
+	if s.udpConn != nil {
+		_ = s.udpConn.Close()
+		s.udpConn = nil
+	}
+}
+
+type request struct {
+	method  string
+	uri     string
+	headers map[string]string
+}
+
+func readRequest(reader *bufio.Reader) (request, error) {
+	var buffer strings.Builder
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return request{}, err
+		}
+		buffer.WriteString(line)
+		if strings.HasSuffix(buffer.String(), "\r\n\r\n") {
+			req := parseRequest(buffer.String())
+			contentLength, _ := strconv.Atoi(req.headers["content-length"])
+			if contentLength > 0 {
+				if _, err := io.CopyN(io.Discard, reader, int64(contentLength)); err != nil {
+					return request{}, err
+				}
+			}
+			return req, nil
+		}
+	}
+}
+
+func parseRequest(raw string) request {
+	lines := strings.Split(raw, "\r\n")
+	parts := strings.Split(lines[0], " ")
+	headers := make(map[string]string)
+	for _, line := range lines[1:] {
+		if line == "" {
+			continue
+		}
+		idx := strings.Index(line, ":")
+		if idx <= 0 {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(line[:idx]))
+		val := strings.TrimSpace(line[idx+1:])
+		headers[key] = val
+	}
+	uri := "/"
+	if len(parts) > 1 {
+		uri = parts[1]
+	}
+	return request{method: parts[0], uri: uri, headers: headers}
+}
+
+func buildResponse(cseq, status string, extra []string) string {
+	lines := []string{
+		"RTSP/1.0 " + status,
+		"CSeq: " + cseq,
+	}
+	lines = append(lines, extra...)
+	lines = append(lines, "", "")
+	return strings.Join(lines, "\r\n")
+}
+
+func buildResponseWithBody(cseq, status string, extra []string, body string) string {
+	headers := append([]string{}, extra...)
+	headers = append(headers, "Content-Length: "+strconv.Itoa(len(body)))
+	return buildResponse(cseq, status, headers) + body
+}
+
+type transportSpec struct {
+	destinationIP net.IP
+	rtpPort       int
+	rtcpPort      int
+}
+
+func parseTransport(header string) transportSpec {
+	spec := transportSpec{rtpPort: 5000, rtcpPort: 5001}
+	if header == "" {
+		return spec
+	}
+	if m := clientPortPattern.FindStringSubmatch(header); m != nil {
+		spec.rtpPort, _ = strconv.Atoi(m[1])
+		spec.rtcpPort, _ = strconv.Atoi(m[2])
+	}
+	if m := destinationPattern.FindStringSubmatch(header); m != nil {
+		spec.destinationIP = net.ParseIP(strings.TrimSpace(m[1]))
+	}
+	return spec
+}
+
+func (t transportSpec) destination(remoteIP net.IP) net.IP {
+	if t.destinationIP != nil {
+		return t.destinationIP
+	}
+	return remoteIP
+}
+
+func (s *Server) setupSessionHeader(sessionID string) string {
+	header := s.vendorProfile.SessionHeader + ": " + sessionID
+	if s.vendorProfile.IncludeSetupTimeout {
+		header += fmt.Sprintf(";timeout=%d", int(rtspSessionTimeout/time.Second))
+	}
+	return header
+}
+
+func (s *Server) sessionHeaders(sessionID string) []string {
+	return []string{s.vendorProfile.SessionHeader + ": " + sessionID}
+}
+
+func sessionHeaders(sessionID string) []string {
+	return vendorprofileHeaders(vendorprofile.ForName(vendorprofile.NameSpec), sessionID)
+}
+
+func vendorprofileHeaders(profile vendorprofile.Profile, sessionID string) []string {
+	return []string{profile.SessionHeader + ": " + sessionID}
+}
+
+func tuningQueryFromURI(uri string) string {
+	idx := strings.Index(uri, "?")
+	if idx < 0 || idx == len(uri)-1 {
+		return ""
+	}
+	return uri[idx+1:]
+}
+
+func sessionIDFrom(header string) string {
+	if header == "" {
+		return ""
+	}
+	return strings.TrimSpace(strings.Split(header, ";")[0])
+}

@@ -1,0 +1,30 @@
+profile: minisatip
+model:
+  manufacturer: minisatip
+  name: minisatip SAT>IP
+source:
+  - label: minisatip public source/docs
+    url: https://github.com/catalinii/minisatip
+confidence: public-doc
+desc_xml:
+  friendlyName: minisatip
+  manufacturer: minisatip
+  modelName: minisatip SAT>IP
+  modelNumber: ""
+  udn: uuid:minisatip-lab
+  description_path: /desc.xml
+  x_satipcap: DVBS2-{tuners}
+  x_satipm3u: /channels.m3u
+ssdp_headers:
+  SERVER: minisatip/1.0 UPnP/1.0
+  ST: urn:ses-com:device:SatIPServer:1
+  USN: uuid:minisatip-lab::urn:ses-com:device:SatIPServer:1
+m3u_sample: /channels.m3u
+rtsp_transcript: ""
+known_quirks: []
+supported_methods: [OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN, GET_PARAMETER]
+tuner_behavior: Not modeled beyond satip-lab lab allocator.
+playback_notes: Real behavior depends on minisatip version, frontend hardware, and command-line options.
+simulator:
+  runtime_profile: minisatip
+  implemented_scope: metadata-only

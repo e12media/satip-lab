@@ -1,0 +1,30 @@
+profile: generic-satip-1.2
+model:
+  manufacturer: e12media
+  name: SAT>IP Lab Server
+source:
+  - label: satip-lab supported profile
+    url: ../supported-profile.md
+confidence: spec
+desc_xml:
+  friendlyName: satip-lab
+  manufacturer: e12media
+  modelName: SAT>IP Lab Server
+  modelNumber: ""
+  udn: uuid:satip-lab-dev
+  description_path: /desc.xml
+  x_satipcap: DVBS2-{tuners}
+  x_satipm3u: /channels.m3u
+ssdp_headers:
+  SERVER: satip-lab/0.2 UPnP/1.0
+  ST: urn:ses-com:device:SatIPServer:1
+  USN: uuid:satip-lab-dev::urn:ses-com:device:SatIPServer:1
+m3u_sample: /channels.m3u
+rtsp_transcript: spec-compatible
+known_quirks: []
+supported_methods: [OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN, GET_PARAMETER]
+tuner_behavior: satip-lab lab allocator with same-mux sharing and deterministic tuner exhaustion
+playback_notes: synthetic RTP MPEG-TS with optional decodable ZDF HD sample profile
+simulator:
+  runtime_profile: generic-satip-1.2
+  implemented_scope: full-lab-default

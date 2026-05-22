@@ -1,0 +1,31 @@
+profile: telestar-digibit-r1
+model:
+  manufacturer: TELestar
+  name: DIGIBIT R1
+source:
+  - label: Public vendor/community metadata
+    url: ""
+confidence: public-doc
+desc_xml:
+  friendlyName: TELestar DIGIBIT R1
+  manufacturer: TELestar
+  modelName: DIGIBIT R1
+  modelNumber: ""
+  udn: uuid:telestar-digibit-r1-lab
+  description_path: /desc.xml
+  x_satipcap: DVBS2-{tuners}
+  x_satipm3u: /channels.m3u
+ssdp_headers:
+  SERVER: TELestar SATIPServer UPnP/1.0
+  ST: urn:ses-com:device:SatIPServer:1
+  USN: uuid:telestar-digibit-r1-lab::urn:ses-com:device:SatIPServer:1
+m3u_sample: /channels.m3u
+rtsp_transcript: ""
+known_quirks:
+  - Requires captured Digibit R1 or satip-axe trace before non-spec behavior is modeled.
+supported_methods: [OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN, GET_PARAMETER]
+tuner_behavior: Not modeled beyond satip-lab lab allocator.
+playback_notes: Hardware RTP timing remains out of scope for this metadata profile.
+simulator:
+  runtime_profile: telestar-digibit-r1
+  implemented_scope: metadata-only

@@ -1,0 +1,11 @@
+# Go
+/satip-lab
+/bin/
+.worktrees/
+*.exe
+*.test
+
+# Generated transport stream (see tool/generate_sample_ts.sh or Docker build).
+assets/sample.ts
+assets/h264_aac_short.ts
+assets/h264_silent.ts

@@ -1,0 +1,23 @@
+---
+description: SAT>IP protocol and simulation profile rules for RTSP, SSDP, HTTP, channels
+globs: "internal/rtsp/**,internal/ssdp/**,internal/httpserver/**,internal/channels/**,internal/lab/**"
+alwaysApply: false
+---
+
+# Protocol surface changes
+
+Read `docs/supported-profile.md` before editing protocol behavior.
+
+- Don’t assume. Don’t hide confusion. Surface tradeoffs.
+- Minimum code that solves the problem. Nothing speculative.
+- Touch only what you must. Clean up only your own mess.
+- Define success criteria. Loop until verified.
+- **SSDP**: search target `urn:ses-com:device:SatIPServer:1`; `LOCATION` must use `config.PublicHost` + HTTP port.
+- **M3U**: five DACH channels in `internal/channels/catalog.go`; lab catalog in `internal/lab/catalog.go`; RTSP URLs must include `src`, `freq`, `pol`, `msys`, `sr`, `pids`.
+- **RTSP**: support OPTIONS, SETUP, PLAY, TEARDOWN; echo CSeq; SETUP validates tuning via `lab.Manager`; unknown service → `404`; tuner exhaustion → `503`.
+- **Env scenario**: `SATIP_LAB_SCENARIO=tuner_busy` → all SETUP return `503` before lab allocation.
+- **Runtime scenarios**: `GET`/`POST /api/scenario`; `no_signal` → lab rejects SETUP with `503` / `Reason: no signal`.
+- **Lab API**: document all endpoints in `docs/api.md`.
+- Document any new simulated behavior in `docs/supported-profile.md`, `docs/api.md`, and `AGENTS.md`.
+
+Do not claim full EN 50585 compliance.

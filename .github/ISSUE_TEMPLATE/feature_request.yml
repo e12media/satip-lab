@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest a new lab behavior, profile, scenario, or tool improvement.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        SAT>IP Lab Server intentionally stays scoped to deterministic client development and CI behavior. Please describe the client test need rather than only the implementation idea.
+  - type: textarea
+    id: need
+    attributes:
+      label: Client test need
+      description: What client behavior would this help test?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Compatibility profile
+        - Runtime scenario
+        - Catalog / M3U
+        - XMLTV / EPG / EIT
+        - RTSP / RTP
+        - Smoke tooling / CI
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence or examples
+      description: For vendor-specific behavior, link public docs or describe sanitized traces/pcaps if available.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Suggested acceptance criteria
+      description: Optional concise checks that would prove the feature works.

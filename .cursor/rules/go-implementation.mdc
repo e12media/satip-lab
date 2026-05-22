@@ -1,0 +1,19 @@
+---
+description: Go implementation conventions for satip-lab
+globs: "**/*.go"
+alwaysApply: false
+---
+
+# Go conventions
+
+- Don’t assume. Don’t hide confusion. Surface tradeoffs.
+- Minimum code that solves the problem. Nothing speculative.
+- Touch only what you must. Clean up only your own mess.
+- Define success criteria. Loop until verified.
+- Match existing package layout under `internal/`; keep `cmd/satip-lab` thin (flags + wiring only).
+- Prefer stdlib; new dependencies need justification in PR text.
+- Use table-driven tests in `*_test.go`; integration tests for HTTP/RTSP go in `internal/simulator/`.
+- Never block the main goroutine on infinite TS loops — use tickers/delays in `internal/ts`.
+- Guard shared session state with `sync.Mutex` (see `internal/rtsp/server.go`).
+- After changing `go.mod` minimum version, update `Dockerfile` golang image and `.github/workflows/ci.yml`.
+- Run `make test` and `make lint` before finishing.

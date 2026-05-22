@@ -1,0 +1,282 @@
+# Larger DACH-oriented ASTRA 19.2E lab catalog.
+#
+# This is deterministic simulator data, not a live transponder dump. Frequencies,
+# polarization, symbol rate, and service names are shaped like common ASTRA DACH
+# services so client UI/import tests can exercise realistic lists without
+# depending on broadcast availability.
+services:
+  - id: das-erste-hd
+    number: 1
+    name: Das Erste HD
+    group: DE
+    tvg_id: daserste.de
+    src: 1
+    freq: 11494
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 5100, 5101, 5102]
+  - id: zdf-hd
+    number: 2
+    name: ZDF HD
+    group: DE
+    tvg_id: zdf.de
+    src: 1
+    freq: 11362
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 6100, 6110, 6120]
+  - id: arte-hd
+    number: 3
+    name: arte HD
+    group: DE
+    tvg_id: arte.de
+    src: 1
+    freq: 11494
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 5200, 5201, 5202]
+  - id: 3sat-hd
+    number: 4
+    name: 3sat HD
+    group: DE
+    tvg_id: 3sat.de
+    src: 1
+    freq: 11347
+    pol: v
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 6300, 6310, 6320]
+  - id: phoenix-hd
+    number: 5
+    name: phoenix HD
+    group: DE
+    tvg_id: phoenix.de
+    src: 1
+    freq: 11582
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 6500, 6510, 6520]
+  - id: tagesschau24-hd
+    number: 6
+    name: tagesschau24 HD
+    group: DE
+    tvg_id: tagesschau24.de
+    src: 1
+    freq: 11053
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 6600, 6610, 6620]
+  - id: one-hd
+    number: 7
+    name: ONE HD
+    group: DE
+    tvg_id: one.de
+    src: 1
+    freq: 11053
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 6700, 6710, 6720]
+  - id: zdfneo-hd
+    number: 8
+    name: ZDFneo HD
+    group: DE
+    tvg_id: zdfneo.de
+    src: 1
+    freq: 11362
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 6800, 6810, 6820]
+  - id: zdfinfo-hd
+    number: 9
+    name: ZDFinfo HD
+    group: DE
+    tvg_id: zdfinfo.de
+    src: 1
+    freq: 11362
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 6900, 6910, 6920]
+  - id: kika-hd
+    number: 10
+    name: KiKA HD
+    group: DE
+    tvg_id: kika.de
+    src: 1
+    freq: 11347
+    pol: v
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 7000, 7010, 7020]
+  - id: br-hd
+    number: 11
+    name: BR Fernsehen HD
+    group: DE Regional
+    tvg_id: br.de
+    src: 1
+    freq: 11582
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 7100, 7110, 7120]
+  - id: hr-hd
+    number: 12
+    name: hr-fernsehen HD
+    group: DE Regional
+    tvg_id: hr.de
+    src: 1
+    freq: 11053
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 7200, 7210, 7220]
+  - id: ndr-hd
+    number: 13
+    name: NDR Fernsehen HD
+    group: DE Regional
+    tvg_id: ndr.de
+    src: 1
+    freq: 11582
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 7300, 7310, 7320]
+  - id: wdr-hd
+    number: 14
+    name: WDR HD
+    group: DE Regional
+    tvg_id: wdr.de
+    src: 1
+    freq: 12422
+    pol: h
+    sr: 27500
+    msys: dvbs2
+    pids: [0, 17, 7400, 7410, 7420]
+  - id: swr-hd
+    number: 15
+    name: SWR HD
+    group: DE Regional
+    tvg_id: swr.de
+    src: 1
+    freq: 11494
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 7500, 7510, 7520]
+  - id: rbb-hd
+    number: 16
+    name: rbb HD
+    group: DE Regional
+    tvg_id: rbb.de
+    src: 1
+    freq: 11053
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 7600, 7610, 7620]
+  - id: sr-hd
+    number: 17
+    name: SR Fernsehen HD
+    group: DE Regional
+    tvg_id: sr.de
+    src: 1
+    freq: 11347
+    pol: v
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 7700, 7710, 7720]
+  - id: mdr-hd
+    number: 18
+    name: MDR HD
+    group: DE Regional
+    tvg_id: mdr.de
+    src: 1
+    freq: 11053
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 7800, 7810, 7820]
+  - id: orf2e
+    number: 19
+    name: ORF 2 Europe
+    group: AT
+    tvg_id: orf2e.at
+    src: 1
+    freq: 12692
+    pol: h
+    sr: 22000
+    msys: dvbs
+    pids: [0, 17, 7900, 7910, 7920]
+  - id: servustv-hd
+    number: 20
+    name: ServusTV HD
+    group: AT
+    tvg_id: servustv.at
+    src: 1
+    freq: 11303
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 8000, 8010, 8020]
+  - id: srf-info
+    number: 21
+    name: SRF info
+    group: CH
+    tvg_id: srfinfo.ch
+    src: 1
+    freq: 10971
+    pol: h
+    sr: 29700
+    msys: dvbs2
+    pids: [0, 17, 8100, 8110, 8120]
+  - id: rtl-hd
+    number: 22
+    name: RTL HD
+    group: DE Private
+    tvg_id: rtl.de
+    src: 1
+    freq: 10832
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 1820, 1821, 1822]
+  - id: sat1-hd
+    number: 23
+    name: SAT.1 HD
+    group: DE Private
+    tvg_id: sat1.de
+    src: 1
+    freq: 11464
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 1830, 1831, 1832]
+  - id: pro7-hd
+    number: 24
+    name: ProSieben HD
+    group: DE Private
+    tvg_id: prosieben.de
+    src: 1
+    freq: 11464
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 1840, 1841, 1842]
+  - id: kabel-eins-hd
+    number: 25
+    name: kabel eins HD
+    group: DE Private
+    tvg_id: kabeleins.de
+    src: 1
+    freq: 11464
+    pol: h
+    sr: 22000
+    msys: dvbs2
+    pids: [0, 17, 1850, 1851, 1852]

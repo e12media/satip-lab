@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Generate transport stream fixture
+        run: ./tool/generate_sample_ts.sh
+
+      - name: Test
+        run: go test ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/e12media/satip-lab
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: satip-lab:release-check
+
+      - name: Smoke test image
+        run: |
+          trap 'docker rm -f satip-lab-release-check >/dev/null 2>&1 || true' EXIT
+          docker run -d --name satip-lab-release-check \
+            --network host \
+            -e SATIP_LAB_PUBLIC_HOST=127.0.0.1 \
+            -e SATIP_LAB_HTTP_PORT=18875 \
+            -e SATIP_LAB_RTSP_PORT=1554 \
+            -e SATIP_LAB_SSDP_PORT=0 \
+            -e SATIP_LAB_PROFILE=tvheadend \
+            satip-lab:release-check
+          sleep 2
+          curl -fsS http://127.0.0.1:18875/satip_server/desc.xml | grep -q 'TVHeadend'
+          curl -fsS http://127.0.0.1:18875/channellist.m3u | grep -q 'ZDF HD'
+          go run ./cmd/satip-lab-smoke --host 127.0.0.1 --rtsp-port 1554
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

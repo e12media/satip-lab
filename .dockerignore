@@ -1,0 +1,7 @@
+.git
+.github
+.cursor
+bin/
+*.test
+*.exe
+assets/*.ts

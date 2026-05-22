@@ -1,0 +1,23 @@
+services:
+  satip-lab:
+    build: .
+    image: satip-lab:local
+    ports:
+      - "554:554/tcp"
+      - "8875:8875/tcp"
+      - "1900:1900/udp"
+    environment:
+      # Host that clients use in LOCATION / M3U URLs.
+      # macOS/Windows Docker Desktop: host.docker.internal
+      # Linux: set to your LAN IP or use host network mode.
+      SATIP_LAB_PUBLIC_HOST: ${SATIP_LAB_PUBLIC_HOST:-127.0.0.1}
+      # Set these when host ports differ from the container ports.
+      SATIP_LAB_PUBLIC_HTTP_PORT: ${SATIP_LAB_PUBLIC_HTTP_PORT:-0}
+      SATIP_LAB_PUBLIC_RTSP_PORT: ${SATIP_LAB_PUBLIC_RTSP_PORT:-0}
+      SATIP_LAB_TUNERS: ${SATIP_LAB_TUNERS:-2}
+      SATIP_LAB_CATALOG: ${SATIP_LAB_CATALOG:-}
+      SATIP_LAB_SAMPLE_PROFILE: ${SATIP_LAB_SAMPLE_PROFILE:-h264_aac_short}
+      SATIP_LAB_PROFILE: ${SATIP_LAB_PROFILE:-generic-satip-1.2}
+      SATIP_LAB_VENDOR_PROFILE: ${SATIP_LAB_VENDOR_PROFILE:-spec}
+      SATIP_LAB_EPG_CLOCK: ${SATIP_LAB_EPG_CLOCK:-fixed:2026-03-29T01:30:00+01:00}
+      SATIP_LAB_SCENARIO: ${SATIP_LAB_SCENARIO:-normal}

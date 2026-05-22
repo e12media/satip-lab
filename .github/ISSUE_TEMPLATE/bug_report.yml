@@ -1,0 +1,50 @@
+name: Bug report
+description: Report a reproducible SAT>IP Lab Server bug.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve SAT>IP Lab Server. Please keep reports in English and include enough detail to reproduce the behavior.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Release tag, commit SHA, or Docker image tag.
+      placeholder: "v1.0.0, latest, or commit SHA"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Discovery / SSDP
+        - Device XML / M3U
+        - XMLTV / EPG / EIT
+        - RTSP / RTP
+        - Tuner allocation / scenarios
+        - Docker / CI
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Commands, environment variables, client behavior, and expected vs actual result.
+      placeholder: |
+        1. Start with ...
+        2. Request ...
+        3. Expected ...
+        4. Actual ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or traces
+      description: Paste relevant logs, RTSP exchange snippets, or smoke output. Do not include secrets.
+      render: text

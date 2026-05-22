@@ -1,0 +1,31 @@
+profile: triax-tss400
+model:
+  manufacturer: TRIAX
+  name: TSS 400
+source:
+  - label: Public vendor/manual metadata
+    url: ""
+confidence: public-doc
+desc_xml:
+  friendlyName: TRIAX TSS 400
+  manufacturer: TRIAX
+  modelName: TSS 400
+  modelNumber: ""
+  udn: uuid:triax-tss400-lab
+  description_path: /desc.xml
+  x_satipcap: DVBS2-{tuners}
+  x_satipm3u: /channels.m3u
+ssdp_headers:
+  SERVER: TRIAX SATIPServer UPnP/1.0
+  ST: urn:ses-com:device:SatIPServer:1
+  USN: uuid:triax-tss400-lab::urn:ses-com:device:SatIPServer:1
+m3u_sample: /channels.m3u
+rtsp_transcript: ""
+known_quirks:
+  - Requires sanitized trace or pcap before TRIAX-specific RTSP behavior is added.
+supported_methods: [OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN, GET_PARAMETER]
+tuner_behavior: Not modeled beyond satip-lab lab allocator.
+playback_notes: Hardware RTP timing remains out of scope for this metadata profile.
+simulator:
+  runtime_profile: triax-tss400
+  implemented_scope: metadata-only

@@ -1,0 +1,33 @@
+profile: tvheadend
+model:
+  manufacturer: TVHeadend
+  name: TVHeadend SAT>IP
+source:
+  - label: Tvheadend public issue showing SAT>IP M3U path
+    url: https://old.tvheadend.org/issues/3003
+  - label: Tvheadend forum desc.xml example
+    url: https://tvheadend.org/d/2723-sat-ip-server-to-server-over-internet-issues
+confidence: public-doc
+desc_xml:
+  friendlyName: TVHeadend SAT>IP
+  manufacturer: TVHeadend
+  modelName: TVHeadend SAT>IP
+  modelNumber: ""
+  udn: uuid:tvheadend-satip-lab
+  description_path: /satip_server/desc.xml
+  x_satipcap: DVBS2-{tuners}
+  x_satipm3u: /channellist.m3u
+ssdp_headers:
+  SERVER: TVHeadend UPnP/1.0
+  ST: urn:ses-com:device:SatIPServer:1
+  USN: uuid:tvheadend-satip-lab::urn:ses-com:device:SatIPServer:1
+m3u_sample: /channellist.m3u
+rtsp_transcript: ""
+known_quirks:
+  - Public examples vary by TVHeadend version and configured SAT>IP server settings.
+supported_methods: [OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN, GET_PARAMETER]
+tuner_behavior: Not modeled beyond satip-lab lab allocator.
+playback_notes: Real TVHeadend behavior depends on backing tuners and mux configuration.
+simulator:
+  runtime_profile: tvheadend
+  implemented_scope: metadata-and-m3u-path
