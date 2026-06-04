@@ -29,6 +29,7 @@ type AgentContextURLs struct {
 	DeviceXML    string `json:"device_xml"`
 	M3U          string `json:"m3u"`
 	XMLTV        string `json:"xmltv"`
+	Clock        string `json:"clock"`
 	Schema       string `json:"schema"`
 	ConfigSchema string `json:"config_schema"`
 	Status       string `json:"status"`
@@ -60,9 +61,10 @@ type AgentContextCompat struct {
 }
 
 type AgentContextScenario struct {
-	Name           string `json:"name"`
-	Description    string `json:"description"`
-	SupportsTarget bool   `json:"supports_target"`
+	Name                  string `json:"name"`
+	Description           string `json:"description"`
+	SupportsTarget        bool   `json:"supports_target"`
+	ClientExpectationHint string `json:"client_expectation_hint,omitempty"`
 }
 
 type AgentContextDoc struct {
@@ -95,6 +97,7 @@ func buildAgentContext(cfg config.Config, manager *lab.Manager) AgentContext {
 			DeviceXML:    cfg.DeviceDescriptionURL(),
 			M3U:          cfg.M3UURL(),
 			XMLTV:        httpBaseURL + "/epg/xmltv.xml",
+			Clock:        httpBaseURL + "/api/clock",
 			Schema:       httpBaseURL + "/api/schema",
 			ConfigSchema: httpBaseURL + "/api/config/schema",
 			Status:       httpBaseURL + "/api/status",
@@ -144,12 +147,32 @@ func buildAgentScenarios() []AgentContextScenario {
 	out := make([]AgentContextScenario, 0, len(scenarios))
 	for _, scenario := range scenarios {
 		out = append(out, AgentContextScenario{
-			Name:           scenario.Name,
-			Description:    scenario.Description,
-			SupportsTarget: scenario.SupportsTarget(),
+			Name:                  scenario.Name,
+			Description:           scenario.Description,
+			SupportsTarget:        scenario.SupportsTarget(),
+			ClientExpectationHint: scenarioExpectationHint(scenario.Name),
 		})
 	}
 	return out
+}
+
+func scenarioExpectationHint(name string) string {
+	switch name {
+	case lab.ScenarioTunerBusy:
+		return "Valid RTSP SETUP returns 503 Service Unavailable with Reason: tuner busy; no tuner or session is allocated."
+	case lab.ScenarioRTPStop:
+		return "RTSP SETUP and PLAY return 200, then exactly 3 RTP packets are sent before packet delivery stops without TEARDOWN."
+	case lab.ScenarioRTPLoss:
+		return "RTSP SETUP and PLAY return 200, then every third RTP packet is dropped; clients should report loss or recover without session setup failure."
+	case lab.ScenarioRTPJitter:
+		return "RTSP SETUP and PLAY return 200, then every third RTP packet is delayed by 40 ms; clients should show buffering or timing tolerance without treating SETUP as failed."
+	case lab.ScenarioContinuityErrors:
+		return "RTP packet framing remains valid, but MPEG-TS continuity counters are corrupted; clients should surface TS continuity errors or recover at the demux layer."
+	case lab.ScenarioMalformedPSI:
+		return "RTP and MPEG-TS packet framing remain valid, but PAT/PMT headers are corrupted; clients should surface PSI/parser evidence rather than transport failure."
+	default:
+		return ""
+	}
 }
 
 func agentDocs() []AgentContextDoc {
@@ -169,11 +192,13 @@ func agentDocs() []AgentContextDoc {
 
 func recommendedAgentChecks() []string {
 	return []string{
+		"Start implementation work on a codex/ branch; do not work directly on main.",
 		"Poll /api/agent/context or /desc.xml before client tests.",
 		"Use SATIP_TEST_HTTP_URL and SATIP_TEST_RTSP_URL instead of hard-coded ports.",
 		"Call POST /api/reset between independent integration tests.",
 		"Use POST /api/scenario to exercise failure handling, then restore normal.",
 		"Assert M3U, XMLTV, EIT p/f, RTSP setup, PLAY, and RTP behavior separately.",
+		"Build and smoke-test the container before PRs that change runtime behavior, Docker, CI, media generation, or advertised lab contracts.",
 		"Update docs/agents and /api/agent/context whenever new lab capabilities, config, scenarios, or companion tools are added.",
 	}
 }

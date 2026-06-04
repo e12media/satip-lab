@@ -60,6 +60,33 @@ services:
 
 For project-specific fixtures, mount your YAML file into the container and point `SATIP_LAB_CATALOG` at the mounted path. The simulator validates the file before opening ports, so readiness polling will fail fast on invalid test data.
 
+## Tuner-busy diagnostics
+
+For startup-only coverage, run a dedicated CI job or matrix entry with `SATIP_LAB_SCENARIO=tuner_busy`:
+
+```yaml
+services:
+  satip-lab:
+    image: ghcr.io/e12media/satip-lab:latest
+    ports:
+      - 554:554
+      - 8875:8875
+    env:
+      SATIP_LAB_PUBLIC_HOST: 127.0.0.1
+      SATIP_LAB_SSDP_PORT: "0"
+      SATIP_LAB_SCENARIO: tuner_busy
+```
+
+The same behavior is also available at runtime for repeatable diagnostics inside a normal simulator job:
+
+```bash
+curl -fsS -X POST "$SATIP_TEST_HTTP_URL/api/scenario" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"tuner_busy"}'
+```
+
+Both forms make valid RTSP `SETUP` requests return `503 Service Unavailable` with `Reason: tuner busy` before any tuner or session is allocated.
+
 ## Go client recipe
 
 ```yaml

@@ -200,6 +200,7 @@ func TestManagerAcceptsVariantScenarioNames(t *testing.T) {
 
 	for _, name := range []string{
 		lab.ScenarioBadM3U,
+		lab.ScenarioTunerBusy,
 		lab.ScenarioRTPStop,
 		lab.ScenarioSlowRTSP,
 		lab.ScenarioMalformedPSI,
@@ -239,6 +240,23 @@ func TestDurationOnlyAppliesToEPGGap(t *testing.T) {
 	}
 	if got := manager.Scenario().Name; got != lab.ScenarioNormal {
 		t.Fatalf("rejected duration should not change scenario, got %q", got)
+	}
+}
+
+func TestTunerBusyScenarioRejectsSetupWithoutAllocatingTuner(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	if err := manager.SetScenario(lab.ScenarioTunerBusy); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1")
+	if err != lab.ErrNoTunerAvailable {
+		t.Fatalf("expected tuner busy, got %v", err)
+	}
+
+	status := manager.Status()
+	if status.Tuners[0].State != "idle" || len(status.Sessions) != 0 {
+		t.Fatalf("tuner_busy should not allocate state: %+v", status)
 	}
 }
 

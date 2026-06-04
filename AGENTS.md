@@ -101,6 +101,26 @@ make smoke         # curl desc.xml + m3u and verify RTSP/RTP (server must be run
 11. **Docker** — if `go.mod` min version changes, update `Dockerfile` golang image and `.github/workflows/ci.yml`.
 12. **Agent pack** — if a change adds or modifies client-facing lab behavior, config, scenarios, catalog/EPG/EIT behavior, API contracts, smoke probes, Docker/CI workflows, MCP, or `satip-labctl`, update `/api/agent/context` and `docs/agents/` in the same PR.
 
+## Agent Delivery Workflow
+
+Default implementation workflow for agent-authored changes:
+
+1. Create or switch to a `codex/` branch before editing.
+2. Implement the smallest scoped change with tests.
+3. Run `make test` and `make lint`.
+4. For runtime behavior, Docker, CI, media generation, or advertised lab contract changes, build and smoke-test the container:
+   ```bash
+   make docker-up
+   make smoke
+   make docker-down
+   ```
+5. Open a PR with the verification evidence and any client-facing compatibility notes.
+6. Request or spawn a PR review pass before merge; address actionable findings.
+7. Re-run the relevant tests after review fixes. If the container path was required before review, rebuild and smoke-test it again.
+8. Publish release containers and merge only when explicitly requested by a maintainer or through the repository release workflow.
+
+For documentation-only changes, keep the branch/PR/review discipline, but container build/smoke is optional unless the docs change Docker, CI, release, or client runtime instructions.
+
 ## Out of Scope (do not add without explicit request)
 
 - Full SAT>IP spec, real broadcast EPG ingestion, full DVB EIT/SI generation
