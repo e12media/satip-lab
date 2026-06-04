@@ -179,8 +179,10 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 	if len(got.Docs) == 0 || got.Docs[0].Path != "docs/agents/README.md" {
 		t.Fatalf("docs: %+v", got.Docs)
 	}
-	if !containsStringWith(got.RecommendedChecks, "codex/") || !containsStringWith(got.RecommendedChecks, "container") {
-		t.Fatalf("recommended checks should include branch and container workflow hints: %+v", got.RecommendedChecks)
+	for _, hint := range []string{"codex/", "container", "Open a PR", "PR review", "Re-run relevant tests", "Publish containers and merge only"} {
+		if !containsStringWith(got.RecommendedChecks, hint) {
+			t.Fatalf("recommended checks should include %q workflow hint: %+v", hint, got.RecommendedChecks)
+		}
 	}
 }
 

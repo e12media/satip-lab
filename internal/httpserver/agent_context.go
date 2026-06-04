@@ -199,6 +199,10 @@ func recommendedAgentChecks() []string {
 		"Use POST /api/scenario to exercise failure handling, then restore normal.",
 		"Assert M3U, XMLTV, EIT p/f, RTSP setup, PLAY, and RTP behavior separately.",
 		"Build and smoke-test the container before PRs that change runtime behavior, Docker, CI, media generation, or advertised lab contracts.",
+		"Open a PR with verification evidence and client-facing compatibility notes.",
+		"Request or spawn a PR review pass before merge and address confirmed review issues.",
+		"Re-run relevant tests after review fixes; rebuild and smoke-test the container again when the container path was required.",
+		"Publish containers and merge only with explicit maintainer approval or through the release workflow.",
 		"Update docs/agents and /api/agent/context whenever new lab capabilities, config, scenarios, or companion tools are added.",
 	}
 }

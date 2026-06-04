@@ -41,7 +41,7 @@ Documentation-only changes still use a branch and PR. Container smoke is optiona
 | Tuner allocation | `internal/lab/manager.go`, `internal/rtsp/server.go` | `internal/lab/lab_test.go`, `internal/simulator/integration_test.go` |
 | Lab HTTP API | `internal/httpserver/server.go` | `internal/httpserver/api_test.go`, [api.md](api.md) |
 | New env flag | `internal/config/config.go`, `cmd/satip-lab/main.go` | `config_test.go`, README, AGENTS.md |
-| Env-only RTSP scenario | `internal/config`, `internal/rtsp/server.go` | `integration_test.go` (`tuner_busy`) |
+| Startup RTSP scenario | `internal/config`, `internal/rtsp/server.go` | `integration_test.go` (`SATIP_LAB_SCENARIO=tuner_busy`) |
 | Compatibility profile | `internal/vendorprofile/`, `internal/httpserver/`, `internal/ssdp/`, `internal/rtsp/server.go`, `docs/compatibility/`, `docs/vendor-profiles/` | `internal/vendorprofile`, `internal/channels`, `internal/httpserver`, `internal/ssdp`, `internal/rtsp` tests, trace-backed docs |
 | Runtime lab scenario | `internal/lab/manager.go`, `internal/httpserver/server.go`, `internal/rtsp/server.go` | `internal/lab/lab_test.go`, `internal/httpserver/api_test.go` |
 | SSDP change | `internal/ssdp/server.go` | manual M-SEARCH or integration |

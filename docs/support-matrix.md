@@ -71,7 +71,7 @@ Status legend:
 | Capability | Real SAT>IP hardware expectation | `satip-lab` v1 behavior | Status | Client test guidance |
 |------------|----------------------------------|--------------------------|--------|----------------------|
 | Runtime status API | Hardware/server APIs are vendor specific. | Stable JSON lab API for status, catalog, tuners, sessions, events, scenarios, reset, and schemas. | Lab-only | Use for assertions in automated tests without packet sniffing. |
-| Runtime error forcing | Real hardware failures are hard to trigger deterministically. | Runtime scenarios force no signal, malformed M3U, malformed PSI, RTP stop/loss/jitter, continuity errors, and slow RTSP. Startup `tuner_busy` and normal allocator exhaustion cover busy-tuner paths using the active compatibility profile's busy status. | Lab-only | Drive negative-path tests directly from CI. |
+| Runtime error forcing | Real hardware failures are hard to trigger deterministically. | Runtime scenarios force no signal, tuner busy, malformed M3U, malformed PSI, RTP stop/loss/jitter, continuity errors, and slow RTSP. Startup `tuner_busy` and normal allocator exhaustion also cover busy-tuner paths using the active compatibility profile's busy status. | Lab-only | Drive negative-path tests directly from CI. |
 | Scenario targeting | Real hardware failures may affect a tuner, mux, service, cable, or network path. | Tune-aware scenarios can target a service, a mux, or their intersection where context exists. | Lab-only | Verify clients handle mixed healthy/unhealthy channel sets. |
 | Reset to known state | Real hardware reset is disruptive and slow. | `POST /api/reset` clears in-memory lab sessions and tuner state. | Lab-only | Reset between test cases to keep suites deterministic. |
 

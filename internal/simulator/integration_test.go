@@ -2,6 +2,7 @@ package simulator_test
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -368,6 +369,45 @@ func TestSingleTunerRejectsDifferentMuxUntilTeardown(t *testing.T) {
 	))
 	if !strings.Contains(afterRelease, "200 OK") {
 		t.Fatalf("expected setup after release: %s", afterRelease)
+	}
+}
+
+func TestRuntimeTunerBusyScenarioRejectsSetupWithoutAllocatingState(t *testing.T) {
+	cfg, sim := startTestSimulator(t)
+	defer stopTestSimulator(sim)
+
+	body := bytes.NewBufferString(`{"name":"tuner_busy"}`)
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/api/scenario", cfg.HTTPPort), body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("scenario status: got %d", resp.StatusCode)
+	}
+
+	setup := rtspExchange(t, cfg.RTSPPort, fmt.Sprintf(
+		"SETUP rtsp://127.0.0.1:%d/?src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102 RTSP/1.0\r\n"+
+			"CSeq: 1\r\nTransport: RTP/AVP;unicast;client_port=5000-5001\r\n\r\n",
+		cfg.RTSPPort,
+	))
+	if !strings.Contains(setup, "503 Service Unavailable") || !strings.Contains(setup, "Reason: tuner busy") {
+		t.Fatalf("expected runtime tuner_busy 503: %s", setup)
+	}
+
+	status := fetchStatus(t, cfg.HTTPPort)
+	if len(status.Sessions) != 0 {
+		t.Fatalf("tuner_busy should not allocate sessions: %+v", status.Sessions)
+	}
+	for _, tuner := range status.Tuners {
+		if tuner.State != "idle" {
+			t.Fatalf("tuner_busy should not allocate tuners: %+v", status.Tuners)
+		}
 	}
 }
 
