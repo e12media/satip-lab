@@ -11,6 +11,23 @@ curl -fsS http://127.0.0.1:8875/api/agent/context
 Read `AGENTS.md`, `docs/supported-profile.md`, and `docs/api.md` before changing simulator behavior.
 If the work changes supported lab behavior, config, scenarios, catalog loading, EPG/EIT, companion tools, or client test workflows, update `docs/agents/` and `/api/agent/context` in the same PR.
 
+## Development Workflow
+
+Use the repository delivery flow unless the maintainer explicitly scopes the task differently:
+
+1. Create or switch to a `codex/` branch before editing.
+2. Implement the smallest scoped change, with tests for behavior changes.
+3. Run `make test` and `make lint`.
+4. If runtime behavior, Docker, CI, media generation, or advertised lab contracts changed, run:
+   ```bash
+   make docker-up
+   make smoke
+   make docker-down
+   ```
+5. Open a PR with verification evidence.
+6. Spawn or request a PR review pass, implement confirmed review issues, then rerun the relevant tests.
+7. Publish containers and merge only when explicitly requested by a maintainer or through the release workflow.
+
 ## Client Test Environment
 
 Use values from `/api/agent/context` when available:

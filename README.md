@@ -6,7 +6,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Sponsor](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa)](https://github.com/sponsors/e12media)
 
-Local **SAT>IP lab server** for client developers. Run one container, point your app at it, and exercise discovery, M3U import, RTSP sessions, tuner allocation, and RTP MPEG-TS playback **without a satellite dish**.
+**Test SAT>IP clients in CI without SAT>IP hardware.**
+
+SAT>IP Lab Server is a local, deterministic **SAT>IP lab server** for client developers. Run one container, point your app at it, and exercise discovery, M3U import, XMLTV EPG, RTSP sessions, tuner allocation, and RTP MPEG-TS playback without a satellite dish or tuner box in your test loop.
 
 Use it with any SAT>IP client that speaks SSDP, RTSP (`DESCRIBE` / `SETUP` / `PLAY` / `PAUSE` / `TEARDOWN` / `GET_PARAMETER`), and unicast RTP.
 
@@ -41,6 +43,7 @@ Then configure your client:
 | Device description | http://127.0.0.1:8875/desc.xml |
 | Channel list (M3U) | http://127.0.0.1:8875/channels.m3u |
 | XMLTV EPG | http://127.0.0.1:8875/epg/xmltv.xml |
+| Lab clock | http://127.0.0.1:8875/api/clock |
 | RTSP base | `rtsp://127.0.0.1:554/` |
 | Agent context | http://127.0.0.1:8875/api/agent/context |
 | Lab status API | http://127.0.0.1:8875/api/status |
@@ -76,7 +79,7 @@ curl -fsS -X POST http://127.0.0.1:8875/api/scenario \
   -d '{"name":"no_signal"}'
 ```
 
-Supported runtime scenarios are `normal`, `no_signal`, `bad_m3u`, `rtp_stop`, `slow_rtsp`, `malformed_psi`, `rtp_loss`, `rtp_jitter`, `cc_errors`, `epg_gap`, `epg_mismatch`, and `epg_stale`.
+Supported runtime scenarios are `normal`, `no_signal`, `bad_m3u`, `tuner_busy`, `rtp_stop`, `slow_rtsp`, `malformed_psi`, `rtp_loss`, `rtp_jitter`, `cc_errors`, `epg_gap`, `epg_mismatch`, and `epg_stale`.
 Scenarios with a tuned service or mux context can be scoped with optional `service_id` or `mux_id` fields, for example `{"name":"no_signal","service_id":"zdf-hd"}`.
 
 See [docs/api.md](docs/api.md), [docs/epg.md](docs/epg.md), and [docs/supported-profile.md](docs/supported-profile.md).

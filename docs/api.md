@@ -19,6 +19,7 @@ Returns a coding-agent bootstrap document with advertised URLs, test environment
     "device_xml": "http://127.0.0.1:8875/desc.xml",
     "m3u": "http://127.0.0.1:8875/channels.m3u",
     "xmltv": "http://127.0.0.1:8875/epg/xmltv.xml",
+    "clock": "http://127.0.0.1:8875/api/clock",
     "schema": "http://127.0.0.1:8875/api/schema",
     "config_schema": "http://127.0.0.1:8875/api/config/schema",
     "status": "http://127.0.0.1:8875/api/status"
@@ -193,6 +194,7 @@ Supported values:
 | `normal` | Normal SAT>IP simulator behavior. |
 | `no_signal` | Valid RTSP `SETUP` requests return `503 Service Unavailable` with `Reason: no signal`; no tuner or session is allocated. |
 | `bad_m3u` | `/channels.m3u` returns deliberately malformed playlist content with a stable `satip-lab:bad_m3u` marker and no usable RTSP URLs. |
+| `tuner_busy` | Valid RTSP `SETUP` requests return `503 Service Unavailable` with `Reason: tuner busy`; no tuner or session is allocated. |
 | `rtp_stop` | RTSP `SETUP` and `PLAY` succeed, then RTP stops after a short deterministic packet burst without an explicit `TEARDOWN`. |
 | `slow_rtsp` | RTSP responses are delayed by a deterministic 250 ms. |
 | `malformed_psi` | RTP keeps valid packet framing while generated PAT/PMT table headers are deliberately corrupted. |
@@ -206,9 +208,11 @@ Supported values:
 Unknown scenario names return `400 Bad Request` and leave the active scenario unchanged.
 Optional `service_id` and `mux_id` fields scope tune-aware RTSP/RTP scenarios, and `epg_gap`, to one service, one mux, or the intersection of both. Untargeted scenarios remain global. Unknown service or mux IDs return `400 Bad Request` and leave the active scenario unchanged.
 
-HTTP-only `bad_m3u`, XMLTV-wide `epg_mismatch` and `epg_stale`, pre-tune `slow_rtsp`, and `normal` behavior are global because there is no resolved service or mux context when those effects are applied. Supplying `service_id` or `mux_id` with a global scenario returns `400 Bad Request`.
+HTTP-only `bad_m3u`, XMLTV-wide `epg_mismatch` and `epg_stale`, pre-tune `tuner_busy` and `slow_rtsp`, and `normal` behavior are global because there is no resolved service or mux context when those effects are applied. Supplying `service_id` or `mux_id` with a global scenario returns `400 Bad Request`.
 
 `epg_gap` also accepts `duration_min`; if omitted, the gap is 60 minutes from the lab clock.
+
+Agent context scenario entries also include `client_expectation_hint` when the scenario has a deterministic client-observable symptom. RTP hints document packet stop counts, loss cadence, jitter delay, continuity-counter corruption, and malformed PSI expectations so client evidence can be generated without reading simulator source.
 
 ## `POST /api/reset`
 

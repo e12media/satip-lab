@@ -133,7 +133,7 @@ func (s *Server) handleRequestWithState(conn net.Conn, req request, state *conne
 	}
 	if s.cfg.Scenario == config.ScenarioTunerBusy && req.method == "SETUP" {
 		return buildResponse(cseq, s.vendorProfile.TunerBusyStatus, []string{
-			"Reason: tuner busy (simulated scenario)",
+			"Reason: tuner busy",
 		})
 	}
 	if s.lab.Scenario().Name == lab.ScenarioSlowRTSP {

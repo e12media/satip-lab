@@ -1,6 +1,6 @@
 package httpserver
 
-const APISchemaVersion = "1.3"
+const APISchemaVersion = "1.4"
 
 type APISchema struct {
 	Version   string              `json:"version"`

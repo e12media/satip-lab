@@ -14,6 +14,20 @@ Use this guide when a coding agent needs to integrate, test, or debug a SAT>IP c
 
 The simulator is a lab server, not a production SAT>IP implementation. Keep client tests scoped to the supported profile in `docs/supported-profile.md`.
 
+## Repository Change Workflow
+
+When changing this repository, use the default delivery workflow:
+
+1. Create or switch to a `codex/` branch before editing.
+2. Implement the smallest scoped change and add tests for behavior changes.
+3. Run `make test` and `make lint`.
+4. If runtime behavior, Docker, CI, media generation, or advertised lab contracts changed, run `make docker-up`, `make smoke`, and `make docker-down`.
+5. Open a PR with verification evidence and client-facing compatibility notes.
+6. Request or spawn a PR review pass, implement confirmed review issues, then rerun relevant tests.
+7. Publish containers and merge only when explicitly requested by a maintainer or through the release workflow.
+
+Documentation-only changes still use a branch and PR; container smoke is optional unless the docs change Docker, CI, release, or client runtime instructions.
+
 ## Runtime Discovery
 
 ```bash
@@ -23,6 +37,7 @@ curl -fsS http://127.0.0.1:8875/api/agent/context
 The response includes:
 
 - Advertised HTTP and RTSP URLs.
+- Self-contained EPG evidence URLs, including `urls.xmltv` and `urls.clock`.
 - Ready-to-use client test environment variables.
 - Catalog source, catalog size, bundled fixture path, and a sample RTSP tune URL.
 - Feature flags for custom catalogs, compatibility profiles, XMLTV, EIT present/following, RTSP/RTP smoke, and runtime scenarios.
@@ -80,9 +95,10 @@ RTSP behavior. See `docs/compatibility/servers.md`.
 | `bad_m3u` | Playlist parser rejection and user-facing import errors. |
 | `no_signal` | Tune failures after valid RTSP `SETUP`. |
 | `slow_rtsp` | Client timeout and retry behavior. |
-| `rtp_stop` | Playback loss after successful `PLAY`. |
-| `rtp_loss` | RTP packet loss tolerance. |
-| `rtp_jitter` | Buffering and timing behavior. |
+| `tuner_busy` | Tuner exhaustion handling without needing pre-filled sessions. |
+| `rtp_stop` | Playback loss after successful `PLAY`; expect exactly 3 RTP packets before delivery stops. |
+| `rtp_loss` | RTP packet loss tolerance; expect every third RTP packet to be dropped. |
+| `rtp_jitter` | Buffering and timing behavior; expect every third RTP packet to be delayed by 40 ms. |
 | `cc_errors` | MPEG-TS continuity-counter error handling. |
 | `malformed_psi` | PAT/PMT validation and error reporting. |
 | `epg_gap` | Missing schedule windows. |
@@ -115,6 +131,7 @@ go run ./cmd/satip-labctl --http-url http://127.0.0.1:8875 context
 go run ./cmd/satip-labctl --http-url http://127.0.0.1:8875 status
 go run ./cmd/satip-labctl --http-url http://127.0.0.1:8875 services
 go run ./cmd/satip-labctl --http-url http://127.0.0.1:8875 scenario rtp_loss --service zdf-hd
+go run ./cmd/satip-labctl --http-url http://127.0.0.1:8875 scenario tuner_busy
 go run ./cmd/satip-labctl --http-url http://127.0.0.1:8875 reset
 go run ./cmd/satip-labctl smoke --rtsp-host 127.0.0.1 --rtsp-port 554
 ```

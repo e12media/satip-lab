@@ -98,6 +98,7 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 			RTSPBaseURL string `json:"rtsp_base_url"`
 			M3U         string `json:"m3u"`
 			XMLTV       string `json:"xmltv"`
+			Clock       string `json:"clock"`
 			Schema      string `json:"schema"`
 		} `json:"urls"`
 		TestEnv map[string]string `json:"test_env"`
@@ -122,13 +123,15 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 			CorpusPath        string   `json:"corpus_path"`
 		} `json:"compatibility"`
 		Scenarios []struct {
-			Name           string `json:"name"`
-			SupportsTarget bool   `json:"supports_target"`
+			Name                  string `json:"name"`
+			SupportsTarget        bool   `json:"supports_target"`
+			ClientExpectationHint string `json:"client_expectation_hint"`
 		} `json:"scenarios"`
 		Docs []struct {
 			Name string `json:"name"`
 			Path string `json:"path"`
 		} `json:"docs"`
+		RecommendedChecks []string `json:"recommended_checks"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
@@ -138,6 +141,9 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 	}
 	if got.URLs.HTTPBaseURL != "http://satip.test:18875" || got.URLs.RTSPBaseURL != "rtsp://satip.test:1554/" {
 		t.Fatalf("urls: %+v", got.URLs)
+	}
+	if got.URLs.XMLTV != "http://satip.test:18875/epg/xmltv.xml" || got.URLs.Clock != "http://satip.test:18875/api/clock" {
+		t.Fatalf("epg urls: %+v", got.URLs)
 	}
 	if got.TestEnv["SATIP_TEST_HTTP_URL"] != "http://satip.test:18875" || got.TestEnv["SATIP_TEST_RTSP_URL"] != "rtsp://satip.test:1554/" {
 		t.Fatalf("test env: %+v", got.TestEnv)
@@ -162,8 +168,21 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 	if len(got.Scenarios) < 10 || got.Scenarios[0].Name != lab.ScenarioNormal {
 		t.Fatalf("scenarios: %+v", got.Scenarios)
 	}
+	for _, scenario := range got.Scenarios {
+		if scenario.Name == lab.ScenarioRTPStop && !strings.Contains(scenario.ClientExpectationHint, "3 RTP packets") {
+			t.Fatalf("rtp_stop expectation hint: %+v", scenario)
+		}
+		if scenario.Name == lab.ScenarioRTPLoss && !strings.Contains(scenario.ClientExpectationHint, "every third") {
+			t.Fatalf("rtp_loss expectation hint: %+v", scenario)
+		}
+	}
 	if len(got.Docs) == 0 || got.Docs[0].Path != "docs/agents/README.md" {
 		t.Fatalf("docs: %+v", got.Docs)
+	}
+	for _, hint := range []string{"codex/", "container", "Open a PR", "PR review", "Re-run relevant tests", "Publish containers and merge only"} {
+		if !containsStringWith(got.RecommendedChecks, hint) {
+			t.Fatalf("recommended checks should include %q workflow hint: %+v", hint, got.RecommendedChecks)
+		}
 	}
 }
 
@@ -460,4 +479,13 @@ func sameStrings(got, want []string) bool {
 		}
 	}
 	return true
+}
+
+func containsStringWith(items []string, want string) bool {
+	for _, item := range items {
+		if strings.Contains(item, want) {
+			return true
+		}
+	}
+	return false
 }

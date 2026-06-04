@@ -2,6 +2,7 @@
 /satip-lab
 /bin/
 .worktrees/
+.private/
 *.exe
 *.test
 

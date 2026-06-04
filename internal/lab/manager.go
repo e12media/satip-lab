@@ -78,6 +78,7 @@ const (
 	ScenarioNormal           = "normal"
 	ScenarioNoSignal         = "no_signal"
 	ScenarioBadM3U           = "bad_m3u"
+	ScenarioTunerBusy        = "tuner_busy"
 	ScenarioRTPStop          = "rtp_stop"
 	ScenarioSlowRTSP         = "slow_rtsp"
 	ScenarioMalformedPSI     = "malformed_psi"
@@ -130,6 +131,10 @@ func (m *Manager) Setup(sessionID, rawQuery, client string) (SetupResult, error)
 	if m.scenario.Name == ScenarioNoSignal && m.scenario.AppliesTo(service, mux) {
 		m.recordLocked(Event{Type: "setup_rejected", ServiceID: service.ID, MuxID: mux.ID, Message: ErrNoSignal.Error()})
 		return SetupResult{}, ErrNoSignal
+	}
+	if m.scenario.Name == ScenarioTunerBusy {
+		m.recordLocked(Event{Type: "tuner_busy", ServiceID: service.ID, MuxID: mux.ID, Message: ErrNoTunerAvailable.Error()})
+		return SetupResult{}, ErrNoTunerAvailable
 	}
 
 	pids, pidsAll, err := requestedPIDs(rawQuery, service)
@@ -450,7 +455,7 @@ func (m *Manager) SetScenarioOptions(name, serviceID, muxID string, durationMin 
 
 func lookupScenario(name string) (Scenario, bool) {
 	switch name {
-	case ScenarioNormal, ScenarioNoSignal, ScenarioBadM3U, ScenarioRTPStop, ScenarioSlowRTSP, ScenarioMalformedPSI, ScenarioRTPLoss, ScenarioRTPJitter, ScenarioContinuityErrors, ScenarioEPGGap, ScenarioEPGMismatch, ScenarioEPGStale:
+	case ScenarioNormal, ScenarioNoSignal, ScenarioBadM3U, ScenarioTunerBusy, ScenarioRTPStop, ScenarioSlowRTSP, ScenarioMalformedPSI, ScenarioRTPLoss, ScenarioRTPJitter, ScenarioContinuityErrors, ScenarioEPGGap, ScenarioEPGMismatch, ScenarioEPGStale:
 		return scenarioByName(name), true
 	default:
 		return Scenario{}, false
@@ -462,6 +467,7 @@ func SupportedScenarios() []Scenario {
 		ScenarioNormal,
 		ScenarioNoSignal,
 		ScenarioBadM3U,
+		ScenarioTunerBusy,
 		ScenarioRTPStop,
 		ScenarioSlowRTSP,
 		ScenarioMalformedPSI,
@@ -504,6 +510,8 @@ func scenarioByName(name string) Scenario {
 		return Scenario{Name: ScenarioNoSignal, Description: "Reject valid RTSP SETUP requests with a simulated no-signal condition."}
 	case ScenarioBadM3U:
 		return Scenario{Name: ScenarioBadM3U, Description: "Return deliberately malformed channel list content from /channels.m3u."}
+	case ScenarioTunerBusy:
+		return Scenario{Name: ScenarioTunerBusy, Description: "Reject valid RTSP SETUP requests with a simulated tuner-busy condition before allocation."}
 	case ScenarioRTPStop:
 		return Scenario{Name: ScenarioRTPStop, Description: "Start RTP after PLAY, then stop sending packets after a short deterministic burst."}
 	case ScenarioSlowRTSP:

@@ -145,6 +145,9 @@ func TestSpecVendorProfileUses503ForStartupTunerBusy(t *testing.T) {
 	if !strings.Contains(resp, "RTSP/1.0 503 Service Unavailable") {
 		t.Fatalf("expected spec tuner busy 503: %s", resp)
 	}
+	if !strings.Contains(resp, "Reason: tuner busy") {
+		t.Fatalf("expected tuner busy reason: %s", resp)
+	}
 }
 
 func TestVendorProfileCanRequireDescribeBeforeSetup(t *testing.T) {

@@ -128,6 +128,7 @@ and `503 Service Unavailable` for tuner-busy behavior. See
 | `normal` | Default lab behavior |
 | `no_signal` | Valid `SETUP` → `503` with `Reason: no signal`; no tuner allocated |
 | `bad_m3u` | `/channels.m3u` returns malformed playlist content for import/parser tests |
+| `tuner_busy` | Valid `SETUP` → `503` with `Reason: tuner busy`; no tuner allocated |
 | `rtp_stop` | `PLAY` succeeds, RTP starts, then packet sending stops after a short deterministic burst |
 | `slow_rtsp` | RTSP responses are delayed by 250 ms |
 | `malformed_psi` | RTP/TS framing remains valid, but generated PAT/PMT table headers are corrupted |
@@ -148,6 +149,7 @@ See `docs/api.md` for request/response shapes.
 - Runtime `rtp_stop` scenario limits RTP to a short deterministic burst after successful `PLAY`.
 - Runtime `malformed_psi` scenario corrupts generated PAT/PMT table headers while keeping RTP and MPEG-TS packet boundaries intact.
 - Runtime `rtp_loss`, `rtp_jitter`, and `cc_errors` scenarios apply deterministic RTP/TS impairments for repeatable client tests.
+- `/api/agent/context` includes client expectation hints for deterministic RTP scenarios, including the `rtp_stop` packet count, `rtp_loss` cadence, `rtp_jitter` delay, and expected parser or recovery symptom.
 - By default, each service gets distinct generated MPEG-TS packets with PAT/PMT-shaped PSI, minimal EIT p/f, PES-like audio/video payloads, and service-specific markers.
 - If `SATIP_LAB_SAMPLE_PROFILE=h264_aac_short`, ZDF HD uses a generated H.264/AAC MPEG-TS test pattern; all other services keep distinct synthetic TS.
 - If `SATIP_LAB_SAMPLE_PROFILE=h264_silent`, ZDF HD uses the same style of H.264 test pattern with silent AAC audio for audio-selection and muted-audio behavior tests.
