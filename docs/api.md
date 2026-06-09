@@ -229,7 +229,7 @@ for the same deterministic lock window before returning to locked.
 ]
 ```
 
-Frontend `state` is one of `idle`, `tuning`, `locked`, `degraded`, or `lost`.
+Frontend `state` is one of `idle`, `tuning`, `locked`, `degraded`, `lost`, or `recovering`.
 The values are synthetic and deterministic, intended for client status and
 retry tests rather than real RF measurement.
 

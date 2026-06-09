@@ -170,8 +170,12 @@ func TestTimelineLockLossRecoversFrontendLifecycle(t *testing.T) {
 	if recovering.LastLockChange == nil || !recovering.LastLockChange.Equal(start.Add(1000*time.Millisecond)) {
 		t.Fatalf("recovering lock timing: %+v", recovering)
 	}
-	if got := manager.StatusAt(start.Add(1300 * time.Millisecond)).Tuners[0].Frontend.State; got != lab.FrontendLocked {
-		t.Fatalf("expected locked after recovery window, got %q", got)
+	locked := manager.StatusAt(start.Add(1300 * time.Millisecond)).Tuners[0].Frontend
+	if locked.State != lab.FrontendLocked {
+		t.Fatalf("expected locked after recovery window, got %q", locked.State)
+	}
+	if locked.LastLockChange == nil || !locked.LastLockChange.Equal(start.Add(1250*time.Millisecond)) {
+		t.Fatalf("locked recovery timing: %+v", locked)
 	}
 }
 

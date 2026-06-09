@@ -778,8 +778,8 @@ func (m *Manager) recomputeTunerFrontendLocked(tunerID int, now time.Time) {
 			return
 		}
 		frontend := lifecycleFrontend(m.tuners[i].TuneStartedAt, now)
-		if recovering, ok := m.recoveringFrontendLocked(m.tuners[i], now); ok {
-			frontend = recovering
+		if recovery, ok := m.timelineRecoveryFrontendLocked(m.tuners[i], now); ok {
+			frontend = recovery
 		}
 		for _, sessionID := range m.tuners[i].Sessions {
 			session, ok := m.sessions[sessionID]
@@ -804,7 +804,7 @@ func (m *Manager) recomputeTunerFrontendLocked(tunerID int, now time.Time) {
 	}
 }
 
-func (m *Manager) recoveringFrontendLocked(tuner Tuner, now time.Time) (TunerFrontend, bool) {
+func (m *Manager) timelineRecoveryFrontendLocked(tuner Tuner, now time.Time) (TunerFrontend, bool) {
 	if m.timeline == nil || m.timeline.StepIndex == 0 {
 		return TunerFrontend{}, false
 	}
@@ -814,7 +814,7 @@ func (m *Manager) recoveringFrontendLocked(tuner Tuner, now time.Time) (TunerFro
 		return TunerFrontend{}, false
 	}
 	recoveryStartedAt := m.timeline.StartedAt.Add(time.Duration(current.AtMS) * time.Millisecond)
-	if now.Before(recoveryStartedAt) || now.Sub(recoveryStartedAt) >= defaultLockDuration() {
+	if now.Before(recoveryStartedAt) {
 		return TunerFrontend{}, false
 	}
 	previousScenario := scenarioFromTimelineStep(previous)
@@ -832,7 +832,11 @@ func (m *Manager) recoveringFrontendLocked(tuner Tuner, now time.Time) (TunerFro
 			continue
 		}
 		if previousScenario.AppliesTo(service, mux) {
-			return recoveringFrontend(recoveryStartedAt), true
+			recoveredAt := recoveryStartedAt.Add(defaultLockDuration())
+			if now.Before(recoveredAt) {
+				return recoveringFrontend(recoveryStartedAt), true
+			}
+			return lockedFrontend(recoveredAt), true
 		}
 	}
 	return TunerFrontend{}, false
