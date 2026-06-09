@@ -54,7 +54,7 @@ Status legend:
 | Real audio/video elementary streams | Carries broadcast audio/video that media decoders can play. | Synthetic TS remains transport-focused. `SATIP_LAB_SAMPLE_PROFILE=h264_aac_short` makes ZDF HD carry a generated H.264/AAC test pattern, and `h264_silent` uses silent AAC. A configured `SATIP_LAB_TS_PATH` still loops one file for all services. | Partial | Use synthetic TS for routing tests, the ZDF HD sample profile for decoder smoke tests, and `SATIP_LAB_TS_PATH` for custom fixtures. |
 | DVB PSI/SI fidelity | Hardware emits real broadcast PSI/SI tables. | Generates PAT/PMT-shaped markers and minimal EIT p/f sufficient for lab differentiation, plus a malformed PSI scenario. | Partial | Test parser robustness around presence or corruption markers, not full DVB SI correctness. |
 | Network impairments | Real networks may drop, delay, or reorder packets unpredictably. | Deterministic `rtp_loss`, `rtp_jitter`, `cc_errors`, and `rtp_stop` scenarios. | Lab-only | Use to exercise client recovery paths repeatably in CI. |
-| Signal metrics | Hardware may expose lock, signal strength, SNR, BER, and similar RF state. | No RF metrics. | Not simulated | Keep signal-quality UI and heuristics tests separate. |
+| Signal metrics | Hardware may expose lock, signal strength, SNR, BER, and similar RF state. | Exposes deterministic synthetic frontend telemetry through `/api/tuners` and `/api/status`, with `signal_degraded`, `lock_loss`, and `slow_lock` scenarios. | Partial | Use for signal-quality UI, retry, and diagnostics tests; validate real RF measurement behavior against hardware. |
 
 ## Tuner and resource model
 
@@ -63,7 +63,7 @@ Status legend:
 | Fixed tuner capacity | Hardware has a finite tuner count and advertises capability. | `SATIP_LAB_TUNERS` controls simulated DVB-S2 tuner capacity and `X_SATIPCAP` advertising. | Supported | Test UI/resource behavior across one or many tuners. |
 | Same-transponder sharing | Multiple services on one transponder can share RF tuning resources on real systems. | Sessions on the same lab mux share one simulated tuner. | Supported | Test client behavior for concurrent same-mux playback. |
 | Cross-transponder exhaustion | Tuning too many distinct muxes can exhaust hardware. | Sessions on different lab muxes consume separate simulated tuners and return `503` when exhausted. | Supported | Test busy handling and retry/backoff logic. |
-| RF lock acquisition timing | Real devices may have variable tune and lock delays. | Normal behavior is deterministic; `slow_rtsp` adds a fixed RTSP delay. | Partial | Test timeout thresholds with `slow_rtsp`; validate RF timing against hardware. |
+| RF lock acquisition timing | Real devices may have variable tune and lock delays. | Normal behavior is deterministic; `slow_rtsp` adds a fixed RTSP delay, and `slow_lock` reports deterministic frontend `lock_ms=1200` while setup/play still succeed. | Partial | Test timeout thresholds with `slow_rtsp` and UI/status behavior with `slow_lock`; validate RF timing against hardware. |
 | Conditional access and scrambled services | Some broadcasts require CAM/card handling. | Not implemented. | Not simulated | Use hardware/full TV server environments for scrambled-service workflows. |
 
 ## Lab API and scenarios
@@ -71,7 +71,7 @@ Status legend:
 | Capability | Real SAT>IP hardware expectation | `satip-lab` v1 behavior | Status | Client test guidance |
 |------------|----------------------------------|--------------------------|--------|----------------------|
 | Runtime status API | Hardware/server APIs are vendor specific. | Stable JSON lab API for status, catalog, tuners, sessions, events, scenarios, reset, and schemas. | Lab-only | Use for assertions in automated tests without packet sniffing. |
-| Runtime error forcing | Real hardware failures are hard to trigger deterministically. | Runtime scenarios force no signal, tuner busy, malformed M3U, malformed PSI, RTP stop/loss/jitter, continuity errors, and slow RTSP. Startup `tuner_busy` and normal allocator exhaustion also cover busy-tuner paths using the active compatibility profile's busy status. | Lab-only | Drive negative-path tests directly from CI. |
+| Runtime error forcing | Real hardware failures are hard to trigger deterministically. | Runtime scenarios force no signal, tuner busy, malformed M3U, malformed PSI, RTP stop/loss/jitter, continuity errors, slow RTSP, and RF-like frontend telemetry variants. Startup `tuner_busy` and normal allocator exhaustion also cover busy-tuner paths using the active compatibility profile's busy status. | Lab-only | Drive negative-path tests directly from CI. |
 | Scenario targeting | Real hardware failures may affect a tuner, mux, service, cable, or network path. | Tune-aware scenarios can target a service, a mux, or their intersection where context exists. | Lab-only | Verify clients handle mixed healthy/unhealthy channel sets. |
 | Reset to known state | Real hardware reset is disruptive and slow. | `POST /api/reset` clears in-memory lab sessions and tuner state. | Lab-only | Reset between test cases to keep suites deterministic. |
 
