@@ -6,6 +6,12 @@ This project follows semantic versioning for public releases.
 
 ## Unreleased
 
+- Add hardware-style status, frontend lifecycle telemetry, and deterministic hardware fault scenarios.
+- Add capture-backed compatibility evidence tooling and DVB SI basics with SDT/NIT generation.
+- Add deterministic multi-server topology fixtures through `SATIP_LAB_TOPOLOGY` and `/api/topology`.
+- Add RTP playback observability fields on `/api/sessions` and bounded RTP lifecycle events.
+- Add `/api/playback/diagnostics` for per-session playback diagnostics, packet rate, and intentional impairment flags.
+
 ## 1.1.0 - 2026-06-04
 
 - Add `urls.clock` to `/api/agent/context` for self-contained EPG evidence.

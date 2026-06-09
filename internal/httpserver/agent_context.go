@@ -34,6 +34,7 @@ type AgentContextURLs struct {
 	ConfigSchema string `json:"config_schema"`
 	Status       string `json:"status"`
 	Topology     string `json:"topology"`
+	Playback     string `json:"playback_diagnostics"`
 }
 
 type AgentContextCatalog struct {
@@ -103,6 +104,7 @@ func buildAgentContext(cfg config.Config, manager *lab.Manager) AgentContext {
 			ConfigSchema: httpBaseURL + "/api/config/schema",
 			Status:       httpBaseURL + "/api/status",
 			Topology:     httpBaseURL + "/api/topology",
+			Playback:     httpBaseURL + "/api/playback/diagnostics",
 		},
 		TestEnv: map[string]string{
 			"SATIP_TEST_HTTP_URL": httpBaseURL,
@@ -128,6 +130,7 @@ func buildAgentContext(cfg config.Config, manager *lab.Manager) AgentContext {
 			"frontend_telemetry":     true,
 			"hardware_status":        true,
 			"multi_server_topology":  true,
+			"playback_diagnostics":   true,
 			"playback_observability": true,
 			"rtsp_interleaved_tcp":   true,
 			"rtsp_rtp_smoke":         true,

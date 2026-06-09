@@ -217,7 +217,7 @@ func TestAPISessionsExposePlaybackObservabilityFields(t *testing.T) {
 	if _, err := labManager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "192.0.2.10"); err != nil {
 		t.Fatal(err)
 	}
-	if err := labManager.SetRTPTransport("sess-1", "udp", "192.0.2.10:5004"); err != nil {
+	if err := labManager.SetRTPTransportDetails("sess-1", "udp", "192.0.2.10:5004", 5004, 7000, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	play, err := labManager.Play("sess-1")
@@ -257,6 +257,126 @@ func TestAPISessionsExposePlaybackObservabilityFields(t *testing.T) {
 	}
 	if got[0].RTPPacketCount != 1 || got[0].RTPByteCount != 1328 || got[0].RTPTransport != "udp" || got[0].RTPDestination != "192.0.2.10:5004" {
 		t.Fatalf("playback counters: %+v", got[0])
+	}
+}
+
+func TestAPIPlaybackDiagnosticsEmpty(t *testing.T) {
+	handler := httpserver.New(config.Config{}, lab.NewManager(lab.DefaultCatalog(), 1)).Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/playback/diagnostics", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/playback/diagnostics status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got []any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty diagnostics, got %+v", got)
+	}
+}
+
+func TestAPIPlaybackDiagnosticsSummarizesActiveSession(t *testing.T) {
+	labManager := lab.NewManager(lab.DefaultCatalog(), 1)
+	if err := labManager.SetScenario(lab.ScenarioContinuityErrors); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := labManager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "192.0.2.10"); err != nil {
+		t.Fatal(err)
+	}
+	if err := labManager.SetRTPTransportDetails("sess-1", "udp", "192.0.2.10:5004", 5004, 7000, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	play, err := labManager.Play("sess-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstRTP := play.Session.UpdatedAt.Add(100 * time.Millisecond)
+	if err := labManager.RecordRTPSentAt("sess-1", 1328, firstRTP); err != nil {
+		t.Fatal(err)
+	}
+	if err := labManager.RecordRTPSentAt("sess-1", 1328, firstRTP.Add(900*time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	handler := httpserver.New(config.Config{}, labManager).Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/playback/diagnostics", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/playback/diagnostics status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got []struct {
+		SessionID              string   `json:"session_id"`
+		ServiceID              string   `json:"service_id"`
+		Scenario               string   `json:"scenario"`
+		RTPTransport           string   `json:"rtp_transport"`
+		RTPDestination         string   `json:"rtp_destination"`
+		RTPPort                int      `json:"rtp_port"`
+		RTCPPort               int      `json:"rtcp_port"`
+		FirstRTPSentAt         string   `json:"first_rtp_sent_at"`
+		PacketRate             float64  `json:"packet_rate"`
+		ContinuityErrors       bool     `json:"continuity_errors"`
+		ContinuityErrorCount   *int     `json:"continuity_error_count"`
+		MalformedPSI           bool     `json:"malformed_psi"`
+		DelayedPSI             bool     `json:"delayed_psi"`
+		DelayedKeyframe        bool     `json:"delayed_keyframe"`
+		IntentionalImpairments []string `json:"intentional_impairments"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("diagnostics: %+v", got)
+	}
+	diag := got[0]
+	if diag.SessionID != "sess-1" || diag.ServiceID != "das-erste-hd" || diag.Scenario != lab.ScenarioContinuityErrors {
+		t.Fatalf("session identity: %+v", diag)
+	}
+	if diag.RTPTransport != "udp" || diag.RTPDestination != "192.0.2.10:5004" || diag.RTPPort != 5004 || diag.RTCPPort != 7000 {
+		t.Fatalf("rtp destination: %+v", diag)
+	}
+	if diag.FirstRTPSentAt == "" || diag.PacketRate < 1.0 || diag.PacketRate > 1.2 {
+		t.Fatalf("rtp timing: %+v", diag)
+	}
+	if !diag.ContinuityErrors || diag.ContinuityErrorCount != nil || diag.MalformedPSI || diag.DelayedPSI || diag.DelayedKeyframe {
+		t.Fatalf("impairment flags: %+v", diag)
+	}
+	if !sameStrings(diag.IntentionalImpairments, []string{"continuity_counter_errors"}) {
+		t.Fatalf("intentional impairments: %+v", diag.IntentionalImpairments)
+	}
+}
+
+func TestAPIPlaybackDiagnosticsReportsInterleavedZeroChannel(t *testing.T) {
+	labManager := lab.NewManager(lab.DefaultCatalog(), 1)
+	if _, err := labManager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "192.0.2.10"); err != nil {
+		t.Fatal(err)
+	}
+	rtpChannel := 0
+	rtcpChannel := 1
+	if err := labManager.SetRTPTransportDetails("sess-1", "interleaved_tcp", "interleaved=0-1", 0, 0, &rtpChannel, &rtcpChannel); err != nil {
+		t.Fatal(err)
+	}
+	handler := httpserver.New(config.Config{}, labManager).Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/playback/diagnostics", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var got []struct {
+		RTPTransport string `json:"rtp_transport"`
+		RTPChannel   *int   `json:"rtp_channel"`
+		RTCPChannel  *int   `json:"rtcp_channel"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].RTPTransport != "interleaved_tcp" || got[0].RTPChannel == nil || *got[0].RTPChannel != 0 || got[0].RTCPChannel == nil || *got[0].RTCPChannel != 1 {
+		t.Fatalf("interleaved diagnostics: body=%s decoded=%+v", rec.Body.String(), got)
 	}
 }
 
@@ -300,6 +420,7 @@ func TestReadOnlyAPIEndpointsRejectNonGET(t *testing.T) {
 		"/api/services",
 		"/api/tuners",
 		"/api/sessions",
+		"/api/playback/diagnostics",
 		"/api/events",
 		"/epg/xmltv.xml",
 	} {
@@ -341,6 +462,7 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 			Clock       string `json:"clock"`
 			Schema      string `json:"schema"`
 			Topology    string `json:"topology"`
+			Playback    string `json:"playback_diagnostics"`
 		} `json:"urls"`
 		TestEnv map[string]string `json:"test_env"`
 		Catalog struct {
@@ -389,6 +511,9 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 	if got.URLs.Topology != "http://satip.test:18875/api/topology" {
 		t.Fatalf("topology url: %+v", got.URLs)
 	}
+	if got.URLs.Playback != "http://satip.test:18875/api/playback/diagnostics" {
+		t.Fatalf("playback diagnostics url: %+v", got.URLs)
+	}
 	if got.TestEnv["SATIP_TEST_HTTP_URL"] != "http://satip.test:18875" || got.TestEnv["SATIP_TEST_RTSP_URL"] != "rtsp://satip.test:1554/" {
 		t.Fatalf("test env: %+v", got.TestEnv)
 	}
@@ -398,7 +523,7 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 	if got.Catalog.Source != "built_in" || got.Catalog.CatalogPath != "" || got.Catalog.FixturePath != "fixtures/astra-19.2e-dach.yaml" {
 		t.Fatalf("catalog source: %+v", got.Catalog)
 	}
-	for _, feature := range []string{"custom_catalogs", "compatibility_evidence", "compatibility_profiles", "dvb_si_basics", "xmltv_epg", "eit_present_following", "frontend_lifecycle", "multi_server_topology", "playback_observability", "rtsp_interleaved_tcp", "rtsp_rtp_smoke", "runtime_scenarios", "scenario_timelines"} {
+	for _, feature := range []string{"custom_catalogs", "compatibility_evidence", "compatibility_profiles", "dvb_si_basics", "xmltv_epg", "eit_present_following", "frontend_lifecycle", "multi_server_topology", "playback_diagnostics", "playback_observability", "rtsp_interleaved_tcp", "rtsp_rtp_smoke", "runtime_scenarios", "scenario_timelines"} {
 		if !got.Features[feature] {
 			t.Fatalf("missing feature %q in %+v", feature, got.Features)
 		}
@@ -739,21 +864,22 @@ func TestAPISchema(t *testing.T) {
 		t.Fatalf("schema version: got %q", got.Version)
 	}
 	wantEndpoints := map[string][]string{
-		"/api/agent/context": {"GET"},
-		"/api/config/schema": {"GET"},
-		"/api/clock":         {"GET"},
-		"/api/schema":        {"GET"},
-		"/api/status":        {"GET"},
-		"/api/topology":      {"GET"},
-		"/api/catalog":       {"GET"},
-		"/api/muxes":         {"GET"},
-		"/api/services":      {"GET"},
-		"/api/tuners":        {"GET"},
-		"/api/sessions":      {"GET"},
-		"/api/events":        {"GET"},
-		"/api/scenario":      {"GET", "POST"},
-		"/api/reset":         {"POST"},
-		"/epg/xmltv.xml":     {"GET"},
+		"/api/agent/context":        {"GET"},
+		"/api/config/schema":        {"GET"},
+		"/api/clock":                {"GET"},
+		"/api/schema":               {"GET"},
+		"/api/status":               {"GET"},
+		"/api/topology":             {"GET"},
+		"/api/catalog":              {"GET"},
+		"/api/muxes":                {"GET"},
+		"/api/services":             {"GET"},
+		"/api/tuners":               {"GET"},
+		"/api/sessions":             {"GET"},
+		"/api/playback/diagnostics": {"GET"},
+		"/api/events":               {"GET"},
+		"/api/scenario":             {"GET", "POST"},
+		"/api/reset":                {"POST"},
+		"/epg/xmltv.xml":            {"GET"},
 	}
 	if len(got.Endpoints) != len(wantEndpoints) {
 		t.Fatalf("endpoint count: got %d want %d", len(got.Endpoints), len(wantEndpoints))
@@ -781,6 +907,7 @@ func TestAPISchema(t *testing.T) {
 		"tuner":                  {"id", "state", "mux_id", "sessions", "frontend"},
 		"frontend":               {"state", "signal_strength", "snr_db", "ber", "per", "lock_ms", "last_lock_change"},
 		"session":                {"id", "state", "tuner_id", "service_id", "service", "mux_id", "pids", "pids_all", "client", "created_at", "updated_at", "rtsp_setup_accepted_at", "rtsp_play_accepted_at", "first_rtp_sent_at", "last_rtp_sent_at", "rtp_packet_count", "rtp_byte_count", "rtp_transport", "rtp_destination"},
+		"playback_diagnostic":    {"session_id", "service_id", "scenario", "rtp_transport", "rtp_destination", "rtp_port", "rtcp_port", "rtp_channel", "rtcp_channel", "first_rtp_sent_at", "rtp_packet_count", "rtp_byte_count", "packet_rate", "continuity_errors", "continuity_error_count", "malformed_psi", "delayed_psi", "delayed_keyframe", "intentional_impairments"},
 		"event":                  {"at", "type", "session_id", "tuner_id", "service_id", "mux_id", "message"},
 		"clock":                  {"mode", "now", "tz"},
 		"scenario":               {"name", "description", "service_id", "mux_id", "duration_min", "timeline"},

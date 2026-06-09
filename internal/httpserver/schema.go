@@ -1,6 +1,6 @@
 package httpserver
 
-const APISchemaVersion = "1.9"
+const APISchemaVersion = "1.10"
 
 type APISchema struct {
 	Version   string              `json:"version"`
@@ -34,6 +34,7 @@ func Schema() APISchema {
 			{Path: "/api/services", Methods: []string{"GET"}, Description: "Service catalog entries."},
 			{Path: "/api/tuners", Methods: []string{"GET"}, Description: "Simulated tuner state."},
 			{Path: "/api/sessions", Methods: []string{"GET"}, Description: "Active RTSP lab sessions."},
+			{Path: "/api/playback/diagnostics", Methods: []string{"GET"}, Description: "Per-session playback diagnostics summary."},
 			{Path: "/api/events", Methods: []string{"GET"}, Description: "Recent lab events."},
 			{Path: "/api/scenario", Methods: []string{"GET", "POST"}, Description: "Runtime scenario state and switching."},
 			{Path: "/api/reset", Methods: []string{"POST"}, Description: "Reset lab sessions and tuner state."},
@@ -54,6 +55,7 @@ func Schema() APISchema {
 			{Name: "tuner", Fields: []string{"id", "state", "mux_id", "sessions", "frontend"}},
 			{Name: "frontend", Fields: []string{"state", "signal_strength", "snr_db", "ber", "per", "lock_ms", "last_lock_change"}},
 			{Name: "session", Fields: []string{"id", "state", "tuner_id", "service_id", "service", "mux_id", "pids", "pids_all", "client", "created_at", "updated_at", "rtsp_setup_accepted_at", "rtsp_play_accepted_at", "first_rtp_sent_at", "last_rtp_sent_at", "rtp_packet_count", "rtp_byte_count", "rtp_transport", "rtp_destination"}},
+			{Name: "playback_diagnostic", Fields: []string{"session_id", "service_id", "scenario", "rtp_transport", "rtp_destination", "rtp_port", "rtcp_port", "rtp_channel", "rtcp_channel", "first_rtp_sent_at", "rtp_packet_count", "rtp_byte_count", "packet_rate", "continuity_errors", "continuity_error_count", "malformed_psi", "delayed_psi", "delayed_keyframe", "intentional_impairments"}},
 			{Name: "event", Fields: []string{"at", "type", "session_id", "tuner_id", "service_id", "mux_id", "message"}},
 			{Name: "scenario", Fields: []string{"name", "description", "service_id", "mux_id", "duration_min", "timeline"}},
 			{Name: "scenario_timeline", Fields: []string{"active", "step_index", "elapsed_ms", "steps"}},

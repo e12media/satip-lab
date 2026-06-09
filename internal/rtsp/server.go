@@ -281,7 +281,15 @@ func (s *Server) handleSetupWithState(conn net.Conn, req request, cseq string, s
 		},
 		service: setup.Service,
 	}
-	_ = s.lab.SetRTPTransport(sessionID, transport.apiName(), transport.apiDestination(sess.clientIP))
+	_ = s.lab.SetRTPTransportDetails(
+		sessionID,
+		transport.apiName(),
+		transport.apiDestination(sess.clientIP),
+		transport.apiRTPPort(),
+		transport.apiRTCPPort(),
+		transport.apiRTPChannel(),
+		transport.apiRTCPChannel(),
+	)
 	if state != nil {
 		sess.rtspWriteMu = &state.writeMu
 		state.rememberSession(sessionID)
@@ -992,6 +1000,38 @@ func (t transportSpec) apiDestination(destinationIP net.IP) string {
 		return fmt.Sprintf("interleaved=%d-%d", t.rtpChannel, t.rtcpChannel)
 	}
 	return fmt.Sprintf("%s:%d", destinationIP.String(), t.rtpPort)
+}
+
+func (t transportSpec) apiRTPPort() int {
+	if t.mode == transportInterleaved {
+		return 0
+	}
+	return t.rtpPort
+}
+
+func (t transportSpec) apiRTCPPort() int {
+	if t.mode == transportInterleaved {
+		return 0
+	}
+	return t.rtcpPort
+}
+
+func (t transportSpec) apiRTPChannel() *int {
+	if t.mode != transportInterleaved {
+		return nil
+	}
+	return intPtr(t.rtpChannel)
+}
+
+func (t transportSpec) apiRTCPChannel() *int {
+	if t.mode != transportInterleaved {
+		return nil
+	}
+	return intPtr(t.rtcpChannel)
+}
+
+func intPtr(v int) *int {
+	return &v
 }
 
 func (s *Server) setupSessionHeader(sessionID string) string {

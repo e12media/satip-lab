@@ -23,7 +23,8 @@ Returns a coding-agent bootstrap document with advertised URLs, test environment
     "schema": "http://127.0.0.1:8875/api/schema",
     "config_schema": "http://127.0.0.1:8875/api/config/schema",
     "status": "http://127.0.0.1:8875/api/status",
-    "topology": "http://127.0.0.1:8875/api/topology"
+    "topology": "http://127.0.0.1:8875/api/topology",
+    "playback_diagnostics": "http://127.0.0.1:8875/api/playback/diagnostics"
   },
   "test_env": {
     "SATIP_TEST_HTTP_URL": "http://127.0.0.1:8875",
@@ -46,6 +47,7 @@ Returns a coding-agent bootstrap document with advertised URLs, test environment
     "frontend_telemetry": true,
     "hardware_status": true,
     "multi_server_topology": true,
+    "playback_diagnostics": true,
     "playback_observability": true,
     "rtsp_interleaved_tcp": true,
     "rtsp_rtp_smoke": true,
@@ -274,6 +276,16 @@ retry tests rather than real RF measurement.
 Returns active RTSP lab sessions. Session objects include RTP packet and byte
 counters, and add timing/transport fields as their corresponding lifecycle
 events occur: RTSP `SETUP`, RTSP `PLAY`, and successful RTP sends.
+
+## `GET /api/playback/diagnostics`
+
+Returns one diagnostics object per active RTSP session. The summary is derived
+from session observability and the active runtime scenario, and includes service
+id, scenario, RTP destination and ports or interleaved channels, first RTP sent
+timestamp, packet/byte counters, observed packet rate after first RTP,
+continuity-error state, and intentional impairment flags such as
+`malformed_psi`, `delayed_psi`, and `continuity_counter_errors`. Exact
+continuity-error counts are omitted unless the active telemetry can report them.
 
 ## `GET /api/events`
 

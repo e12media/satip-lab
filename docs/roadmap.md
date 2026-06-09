@@ -173,9 +173,9 @@ Deferred from v0.2:
 
 ## v1.16 Playback Observability
 
-- [ ] RTP timing and counters are exposed through `/api/sessions` for RTSP setup/play acceptance, first and last RTP sent timestamps, packet counts, byte counts, transport, and destination. Tracked by issue #26.
-- [ ] `/api/events` records bounded RTP lifecycle/progress events without flooding the event buffer. Tracked by issue #26.
-- [ ] `GET /api/playback/diagnostics` summarizes per-session playback diagnostics for client CI and UI evidence. Tracked by issue #27.
+- [x] RTP timing and counters are exposed through `/api/sessions` for RTSP setup/play acceptance, first and last RTP sent timestamps, packet counts, byte counts, transport, and destination. Tracked by issue #26.
+- [x] `/api/events` records bounded RTP lifecycle/progress events without flooding the event buffer. Tracked by issue #26.
+- [x] `GET /api/playback/diagnostics` summarizes per-session playback diagnostics for client CI and UI evidence. Tracked by issue #27.
 
 ## v1.17 Startup Playback Scenarios
 
@@ -215,8 +215,7 @@ trace-backed or owned-hardware evidence is available.
 
 ## Next High-Value Slices
 
-- Land playback observability (#26), then the diagnostics summary API (#27), so client timing evidence is available before stream-generation work.
-- Add startup playback scenarios (#28) once RTP timing can prove the intended server-side delays.
+- Add startup playback scenarios (#28) using the landed RTP timing and diagnostics surfaces to prove intended server-side delays.
 - Add media realism profiles (#29), then continue evidence-backed profile promotion when sanitized traces or owned-hardware data are available.
 - Developer ergonomics after the current spine: SSE event stream and richer smoke artifacts.
 

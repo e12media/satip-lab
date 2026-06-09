@@ -2,6 +2,7 @@ package lab
 
 import (
 	"errors"
+	"net"
 	"net/url"
 	"sort"
 	"strconv"
@@ -61,6 +62,10 @@ type Session struct {
 	RTPByteCount        int        `json:"rtp_byte_count"`
 	RTPTransport        string     `json:"rtp_transport,omitempty"`
 	RTPDestination      string     `json:"rtp_destination,omitempty"`
+	RTPPort             int        `json:"-"`
+	RTCPPort            int        `json:"-"`
+	RTPChannel          *int       `json:"-"`
+	RTCPChannel         *int       `json:"-"`
 }
 
 type Tuner struct {
@@ -264,6 +269,11 @@ func (m *Manager) Play(sessionID string) (SetupResult, error) {
 }
 
 func (m *Manager) SetRTPTransport(sessionID, transport, destination string) error {
+	rtpPort, rtcpPort := portsFromDestination(destination)
+	return m.SetRTPTransportDetails(sessionID, transport, destination, rtpPort, rtcpPort, nil, nil)
+}
+
+func (m *Manager) SetRTPTransportDetails(sessionID, transport, destination string, rtpPort, rtcpPort int, rtpChannel, rtcpChannel *int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -273,6 +283,10 @@ func (m *Manager) SetRTPTransport(sessionID, transport, destination string) erro
 	}
 	session.RTPTransport = transport
 	session.RTPDestination = destination
+	session.RTPPort = rtpPort
+	session.RTCPPort = rtcpPort
+	session.RTPChannel = rtpChannel
+	session.RTCPChannel = rtcpChannel
 	m.sessions[sessionID] = session
 	return nil
 }
@@ -999,6 +1013,18 @@ func idleFrontend() TunerFrontend {
 
 func timePtr(t time.Time) *time.Time {
 	return &t
+}
+
+func portsFromDestination(destination string) (int, int) {
+	_, rawPort, err := net.SplitHostPort(destination)
+	if err != nil {
+		return 0, 0
+	}
+	rtpPort, err := strconv.Atoi(rawPort)
+	if err != nil || rtpPort <= 0 {
+		return 0, 0
+	}
+	return rtpPort, rtpPort + 1
 }
 
 func defaultLockDuration() time.Duration {
