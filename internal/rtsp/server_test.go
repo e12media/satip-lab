@@ -4,9 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strconv"
 	"strings"
@@ -15,6 +18,7 @@ import (
 	"time"
 
 	"github.com/e12media/satip-lab/internal/config"
+	"github.com/e12media/satip-lab/internal/httpserver"
 	"github.com/e12media/satip-lab/internal/lab"
 	"github.com/e12media/satip-lab/internal/ts"
 	"github.com/e12media/satip-lab/internal/vendorprofile"
@@ -746,6 +750,49 @@ func TestUDPStreamingUpdatesPlaybackTimingAndCounters(t *testing.T) {
 	}
 	if session.RTPPacketCount < 1 || session.RTPByteCount < n {
 		t.Fatalf("rtp counters: packet_n=%d session=%+v", n, session)
+	}
+}
+
+func TestPlaybackDiagnosticsEndpointReportsRTSPRTPStream(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, manager)
+	rtpConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rtpConn.Close()
+	rtpPort := rtpConn.LocalAddr().(*net.UDPAddr).Port
+	sessionID := setupTestSessionWithRTPPort(t, server, rtpPort)
+
+	play := server.handlePlay(request{headers: map[string]string{"session": sessionID}}, "2")
+	if !strings.Contains(play, "200 OK") {
+		t.Fatalf("PLAY failed: %s", play)
+	}
+	defer server.handleTeardown(request{headers: map[string]string{"session": sessionID}}, "3")
+
+	_ = rtpConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	if _, _, err := rtpConn.ReadFromUDP(make([]byte, 2048)); err != nil {
+		t.Fatalf("expected RTP packet: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, "/api/playback/diagnostics", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	httpserver.New(config.Config{}, manager).Handler().ServeHTTP(rec, req)
+
+	var got []struct {
+		SessionID      string `json:"session_id"`
+		ServiceID      string `json:"service_id"`
+		RTPDestination string `json:"rtp_destination"`
+		RTPPacketCount int    `json:"rtp_packet_count"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusOK || len(got) != 1 || got[0].SessionID != sessionID || got[0].ServiceID != "das-erste-hd" || got[0].RTPDestination != "127.0.0.1:"+strconv.Itoa(rtpPort) || got[0].RTPPacketCount < 1 {
+		t.Fatalf("diagnostics status=%d body=%s decoded=%+v", rec.Code, rec.Body.String(), got)
 	}
 }
 

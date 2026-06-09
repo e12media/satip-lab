@@ -8,6 +8,8 @@ import (
 	"html"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/e12media/satip-lab/internal/channels"
@@ -74,6 +76,28 @@ type HardwareNetwork struct {
 	RTPStreams    int `json:"rtp_streams"`
 	FrontendLocks int `json:"frontend_locks"`
 	RecentEvents  int `json:"recent_events"`
+}
+
+type PlaybackDiagnostic struct {
+	SessionID              string     `json:"session_id"`
+	ServiceID              string     `json:"service_id"`
+	Scenario               string     `json:"scenario"`
+	RTPTransport           string     `json:"rtp_transport,omitempty"`
+	RTPDestination         string     `json:"rtp_destination,omitempty"`
+	RTPPort                int        `json:"rtp_port,omitempty"`
+	RTCPPort               int        `json:"rtcp_port,omitempty"`
+	RTPChannel             int        `json:"rtp_channel,omitempty"`
+	RTCPChannel            int        `json:"rtcp_channel,omitempty"`
+	FirstRTPSentAt         *time.Time `json:"first_rtp_sent_at,omitempty"`
+	RTPPacketCount         int        `json:"rtp_packet_count"`
+	RTPByteCount           int        `json:"rtp_byte_count"`
+	PacketRate             float64    `json:"packet_rate"`
+	ContinuityErrors       bool       `json:"continuity_errors"`
+	ContinuityErrorCount   int        `json:"continuity_error_count"`
+	MalformedPSI           bool       `json:"malformed_psi"`
+	DelayedPSI             bool       `json:"delayed_psi"`
+	DelayedKeyframe        bool       `json:"delayed_keyframe"`
+	IntentionalImpairments []string   `json:"intentional_impairments,omitempty"`
 }
 
 func New(cfg config.Config, labManager *lab.Manager, reset ...func()) *Server {
@@ -197,6 +221,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/services", s.handleAPIServices)
 	mux.HandleFunc("/api/tuners", s.handleAPITuners)
 	mux.HandleFunc("/api/sessions", s.handleAPISessions)
+	mux.HandleFunc("/api/playback/diagnostics", s.handleAPIPlaybackDiagnostics)
 	mux.HandleFunc("/api/events", s.handleAPIEvents)
 	mux.HandleFunc("/api/clock", s.handleAPIClock)
 	mux.HandleFunc("/api/config/schema", s.handleAPIConfigSchema)
@@ -348,6 +373,88 @@ func (s *Server) handleAPISessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, s.lab.Status().Sessions)
+}
+
+func (s *Server) handleAPIPlaybackDiagnostics(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	writeJSON(w, s.playbackDiagnostics())
+}
+
+func (s *Server) playbackDiagnostics() []PlaybackDiagnostic {
+	status := s.lab.Status()
+	scenario := s.lab.Scenario()
+	diagnostics := make([]PlaybackDiagnostic, 0, len(status.Sessions))
+	for _, session := range status.Sessions {
+		service, _ := s.lab.Catalog().ServiceByID(session.ServiceID)
+		mux, _ := s.lab.Catalog().MuxByID(session.MuxID)
+		sessionScenario := scenario
+		if !scenario.AppliesTo(service, mux) {
+			sessionScenario = lab.Scenario{Name: lab.ScenarioNormal}
+		}
+		diagnostic := PlaybackDiagnostic{
+			SessionID:      session.ID,
+			ServiceID:      session.ServiceID,
+			Scenario:       sessionScenario.Name,
+			RTPTransport:   session.RTPTransport,
+			RTPDestination: session.RTPDestination,
+			FirstRTPSentAt: session.FirstRTPSentAt,
+			RTPPacketCount: session.RTPPacketCount,
+			RTPByteCount:   session.RTPByteCount,
+			PacketRate:     packetRate(session),
+		}
+		diagnostic.RTPPort, diagnostic.RTCPPort, diagnostic.RTPChannel, diagnostic.RTCPChannel = playbackTransportFields(session)
+		applyScenarioDiagnostics(&diagnostic, session, sessionScenario)
+		diagnostics = append(diagnostics, diagnostic)
+	}
+	return diagnostics
+}
+
+func packetRate(session lab.Session) float64 {
+	if session.FirstRTPSentAt == nil || session.LastRTPSentAt == nil || session.RTPPacketCount == 0 {
+		return 0
+	}
+	elapsed := session.LastRTPSentAt.Sub(*session.FirstRTPSentAt).Seconds()
+	if elapsed <= 0 {
+		return 0
+	}
+	return float64(session.RTPPacketCount) / elapsed
+}
+
+func playbackTransportFields(session lab.Session) (rtpPort, rtcpPort, rtpChannel, rtcpChannel int) {
+	if strings.HasPrefix(session.RTPDestination, "interleaved=") {
+		parts := strings.SplitN(strings.TrimPrefix(session.RTPDestination, "interleaved="), "-", 2)
+		if len(parts) == 2 {
+			rtpChannel, _ = strconv.Atoi(parts[0])
+			rtcpChannel, _ = strconv.Atoi(parts[1])
+		}
+		return 0, 0, rtpChannel, rtcpChannel
+	}
+	_, port, err := net.SplitHostPort(session.RTPDestination)
+	if err != nil {
+		return 0, 0, 0, 0
+	}
+	rtpPort, _ = strconv.Atoi(port)
+	if rtpPort > 0 {
+		rtcpPort = rtpPort + 1
+	}
+	return rtpPort, rtcpPort, 0, 0
+}
+
+func applyScenarioDiagnostics(diagnostic *PlaybackDiagnostic, session lab.Session, scenario lab.Scenario) {
+	switch scenario.Name {
+	case lab.ScenarioContinuityErrors:
+		diagnostic.ContinuityErrors = true
+		diagnostic.ContinuityErrorCount = session.RTPPacketCount
+		diagnostic.IntentionalImpairments = append(diagnostic.IntentionalImpairments, "continuity_counter_errors")
+	case lab.ScenarioMalformedPSI:
+		diagnostic.MalformedPSI = true
+		diagnostic.IntentionalImpairments = append(diagnostic.IntentionalImpairments, "malformed_psi")
+	case lab.ScenarioDelayedPSI:
+		diagnostic.DelayedPSI = true
+		diagnostic.IntentionalImpairments = append(diagnostic.IntentionalImpairments, "delayed_psi")
+	}
 }
 
 func (s *Server) handleAPIEvents(w http.ResponseWriter, r *http.Request) {

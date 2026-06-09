@@ -40,7 +40,7 @@ The response includes:
 - Self-contained EPG evidence URLs, including `urls.xmltv` and `urls.clock`.
 - Ready-to-use client test environment variables.
 - Catalog source, catalog size, bundled fixture path, and a sample RTSP tune URL.
-- Feature flags for custom catalogs, compatibility evidence tooling, compatibility profiles, DVB SI basics, XMLTV, EIT present/following, frontend lifecycle, frontend telemetry, hardware-style status, multi-server topology fixtures, playback observability, RTSP interleaved TCP, RTSP/RTP smoke, and runtime scenarios.
+- Feature flags for custom catalogs, compatibility evidence tooling, compatibility profiles, DVB SI basics, XMLTV, EIT present/following, frontend lifecycle, frontend telemetry, hardware-style status, multi-server topology fixtures, playback observability, playback diagnostics, RTSP interleaved TCP, RTSP/RTP smoke, and runtime scenarios.
 - Runtime profile name from `runtime.profile`.
 - Compatibility profile names and corpus path from `compatibility`.
 - Runtime scenario names and whether they can be scoped by `service_id` or `mux_id`.
@@ -80,6 +80,12 @@ include RTP packet and byte counters, and add RTSP setup/play timestamps,
 RTP first/last sent timestamps, transport, and destination as those lifecycle
 events occur. Use these fields to compare server-side first RTP send time with
 client-observed first RTP receive time.
+
+When `features.playback_diagnostics` is true, use `urls.playback_diagnostics`
+or `/api/playback/diagnostics` for a per-session summary of service id, scenario,
+RTP destination, packet rate, continuity-error state, and intentional impairment
+flags. This endpoint is intended for CI assertions and UI diagnostics that should
+not need packet capture.
 
 ## Catalog-Aware Tests
 

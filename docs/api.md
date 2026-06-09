@@ -46,6 +46,7 @@ Returns a coding-agent bootstrap document with advertised URLs, test environment
     "frontend_telemetry": true,
     "hardware_status": true,
     "multi_server_topology": true,
+    "playback_diagnostics": true,
     "playback_observability": true,
     "rtsp_interleaved_tcp": true,
     "rtsp_rtp_smoke": true,
@@ -274,6 +275,15 @@ retry tests rather than real RF measurement.
 Returns active RTSP lab sessions. Session objects include RTP packet and byte
 counters, and add timing/transport fields as their corresponding lifecycle
 events occur: RTSP `SETUP`, RTSP `PLAY`, and successful RTP sends.
+
+## `GET /api/playback/diagnostics`
+
+Returns one diagnostics object per active RTSP session. The summary is derived
+from session observability and the active runtime scenario, and includes service
+id, scenario, RTP destination and ports or interleaved channels, first RTP sent
+timestamp, packet/byte counters, packet rate, continuity-error state, and
+intentional impairment flags such as `malformed_psi`, `delayed_psi`, and
+`continuity_counter_errors`.
 
 ## `GET /api/events`
 
