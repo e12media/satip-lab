@@ -180,6 +180,54 @@ func TestTargetedSignalScenarioOnlyChangesMatchingMuxTelemetry(t *testing.T) {
 	}
 }
 
+func TestRuntimeSignalScenarioUpdatesActiveTunerTelemetry(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	if _, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := manager.Status().Tuners[0].Frontend.State; got != lab.FrontendLocked {
+		t.Fatalf("initial frontend state: got %q", got)
+	}
+
+	if err := manager.SetScenario(lab.ScenarioSignalDegraded); err != nil {
+		t.Fatal(err)
+	}
+	if got := manager.Status().Tuners[0].Frontend.State; got != lab.FrontendDegraded {
+		t.Fatalf("scenario change should update active tuner telemetry, got %q", got)
+	}
+
+	if err := manager.SetScenario(lab.ScenarioNormal); err != nil {
+		t.Fatal(err)
+	}
+	if got := manager.Status().Tuners[0].Frontend.State; got != lab.FrontendLocked {
+		t.Fatalf("restoring normal should update active tuner telemetry, got %q", got)
+	}
+}
+
+func TestServiceTargetedTelemetryIsStableForSameMuxSharing(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	if err := manager.SetScenarioTarget(lab.ScenarioSignalDegraded, "arte-hd", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Setup("sess-arte", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5200,5201,5202", "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Setup("sess-daserste", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+
+	status := manager.Status()
+	if status.Tuners[0].Frontend.State != lab.FrontendDegraded {
+		t.Fatalf("shared tuner should stay degraded while targeted service is active: %+v", status.Tuners[0])
+	}
+
+	manager.Teardown("sess-arte")
+	status = manager.Status()
+	if status.Tuners[0].Frontend.State != lab.FrontendLocked {
+		t.Fatalf("shared tuner should return locked after targeted service leaves: %+v", status.Tuners[0])
+	}
+}
+
 func TestManagerTracksRequestedPIDs(t *testing.T) {
 	manager := lab.NewManager(lab.DefaultCatalog(), 1)
 	if _, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1"); err != nil {

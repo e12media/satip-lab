@@ -187,7 +187,7 @@ func (m *Manager) Setup(sessionID, rawQuery, client string) (SetupResult, error)
 	}
 	m.sessions[sessionID] = session
 	m.addSessionToTunerLocked(tunerID, sessionID)
-	m.setFrontendLocked(tunerID, service, mux, now)
+	m.recomputeTunerFrontendLocked(tunerID, now)
 	m.recordLocked(Event{Type: "session_setup", SessionID: sessionID, TunerID: tunerID, ServiceID: service.ID, MuxID: mux.ID})
 
 	return SetupResult{Session: session, Service: service, Mux: mux, TunerID: tunerID}, nil
@@ -473,6 +473,7 @@ func (m *Manager) SetScenarioOptions(name, serviceID, muxID string, durationMin 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.scenario = scenario
+	m.recomputeAllFrontendsLocked(time.Now().UTC())
 	m.recordLocked(Event{Type: "scenario_changed", Message: scenario.Name})
 	return nil
 }
@@ -609,17 +610,48 @@ func (m *Manager) removeSessionFromTunerLocked(tunerID int, sessionID string) {
 			m.tuners[i].State = "idle"
 			m.tuners[i].MuxID = ""
 			m.tuners[i].Frontend = idleFrontend()
+		} else {
+			m.recomputeTunerFrontendLocked(tunerID, time.Now().UTC())
 		}
 		return
 	}
 }
 
-func (m *Manager) setFrontendLocked(tunerID int, service Service, mux Mux, now time.Time) {
+func (m *Manager) recomputeAllFrontendsLocked(now time.Time) {
+	for _, tuner := range m.tuners {
+		m.recomputeTunerFrontendLocked(tuner.ID, now)
+	}
+}
+
+func (m *Manager) recomputeTunerFrontendLocked(tunerID int, now time.Time) {
 	for i := range m.tuners {
 		if m.tuners[i].ID != tunerID {
 			continue
 		}
-		m.tuners[i].Frontend = frontendForScenario(m.scenario, service, mux, now)
+		if m.tuners[i].State == "idle" || len(m.tuners[i].Sessions) == 0 {
+			m.tuners[i].Frontend = idleFrontend()
+			return
+		}
+		frontend := lockedFrontend(now)
+		for _, sessionID := range m.tuners[i].Sessions {
+			session, ok := m.sessions[sessionID]
+			if !ok {
+				continue
+			}
+			service, ok := m.catalog.ServiceByID(session.ServiceID)
+			if !ok {
+				continue
+			}
+			mux, ok := m.catalog.MuxByID(session.MuxID)
+			if !ok {
+				continue
+			}
+			if m.scenario.AppliesTo(service, mux) {
+				frontend = frontendForScenario(m.scenario, service, mux, now)
+				break
+			}
+		}
+		m.tuners[i].Frontend = frontend
 		return
 	}
 }
