@@ -165,8 +165,16 @@ func scenarioExpectationHint(name string) string {
 	switch name {
 	case lab.ScenarioTunerBusy:
 		return "Valid RTSP SETUP returns 503 Service Unavailable with Reason: tuner busy; no tuner or session is allocated."
+	case lab.ScenarioTunerWedged:
+		return "Valid RTSP SETUP returns 503 Service Unavailable with Reason: tuner wedged until POST /api/reset clears the wedged fault."
+	case lab.ScenarioColdBoot:
+		return "RTSP responses are delayed by 750 ms to mimic deterministic cold-boot startup latency."
 	case lab.ScenarioRTPStop:
 		return "RTSP SETUP and PLAY return 200, then exactly 3 RTP packets are sent before packet delivery stops without TEARDOWN."
+	case lab.ScenarioRTPBlackhole:
+		return "RTSP SETUP and PLAY return 200 and the RTSP session remains alive, but all RTP packets are dropped."
+	case lab.ScenarioDelayedPSI:
+		return "RTSP SETUP and PLAY return 200, then the initial RTP packets carrying startup PAT/PMT evidence are delayed before normal RTP resumes."
 	case lab.ScenarioRTPLoss:
 		return "RTSP SETUP and PLAY return 200, then every third RTP packet is dropped; clients should report loss or recover without session setup failure."
 	case lab.ScenarioRTPJitter:
@@ -179,6 +187,8 @@ func scenarioExpectationHint(name string) string {
 		return "RTSP SETUP and PLAY still succeed, while /api/tuners reports frontend.state=degraded with deterministic signal_strength=42, snr_db=6.5, ber=0.00025, and per=0.02."
 	case lab.ScenarioLockLoss:
 		return "RTSP SETUP and PLAY still succeed, while /api/tuners reports frontend.state=lost with deterministic zero signal and high BER/PER for lock-loss UI and retry handling."
+	case lab.ScenarioSignalRecovery:
+		return "RTSP SETUP and PLAY still succeed, while /api/tuners reports frontend.state=recovering before returning to locked after the deterministic lock window."
 	case lab.ScenarioSlowLock:
 		return "RTSP SETUP and PLAY still succeed, while /api/tuners reports frontend.state=tuning with lock_ms=1200 for slow-lock UI and timeout tolerance tests."
 	default:

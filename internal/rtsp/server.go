@@ -23,6 +23,7 @@ var destinationPattern = regexp.MustCompile(`(?i)destination=([^;]+)`)
 var interleavedPattern = regexp.MustCompile(`(?i)interleaved=(\d+)-(\d+)`)
 
 const slowRTSPDelay = 250 * time.Millisecond
+const coldBootDelay = 750 * time.Millisecond
 const rtspSessionTimeout = 60 * time.Second
 
 type Server struct {
@@ -188,8 +189,11 @@ func (s *Server) handleRequestWithState(conn net.Conn, req request, state *conne
 			"Reason: tuner busy",
 		})
 	}
-	if s.lab.Scenario().Name == lab.ScenarioSlowRTSP {
+	switch s.lab.Scenario().Name {
+	case lab.ScenarioSlowRTSP:
 		time.Sleep(slowRTSPDelay)
+	case lab.ScenarioColdBoot:
+		time.Sleep(coldBootDelay)
 	}
 
 	switch req.method {
@@ -254,6 +258,8 @@ func (s *Server) handleSetupWithState(conn net.Conn, req request, cseq string, s
 			return buildResponse(cseq, s.vendorProfile.TunerBusyStatus, []string{"Reason: tuner busy"})
 		case lab.ErrNoSignal:
 			return buildResponse(cseq, "503 Service Unavailable", []string{"Reason: no signal"})
+		case lab.ErrTunerWedged:
+			return buildResponse(cseq, "503 Service Unavailable", []string{"Reason: tuner wedged"})
 		case lab.ErrServiceNotFound:
 			return buildResponse(cseq, "404 Not Found", []string{"Reason: service not found"})
 		default:
@@ -397,6 +403,10 @@ func (s *Server) streamBehavior(service lab.Service, mux lab.Mux) streamBehavior
 		return streamBehavior{dropEvery: 3}
 	case lab.ScenarioRTPJitter:
 		return streamBehavior{jitterEvery: 3, jitterDelay: 40 * time.Millisecond}
+	case lab.ScenarioRTPBlackhole:
+		return streamBehavior{dropAll: true}
+	case lab.ScenarioDelayedPSI:
+		return streamBehavior{initialDrop: 3}
 	default:
 		return streamBehavior{}
 	}
@@ -601,6 +611,8 @@ type session struct {
 type streamBehavior struct {
 	packetLimit int
 	dropEvery   int
+	dropAll     bool
+	initialDrop int
 	jitterEvery int
 	jitterDelay time.Duration
 }
@@ -610,6 +622,12 @@ type streamPayloadProvider func() []byte
 type streamBehaviorProvider func() streamBehavior
 
 func (b streamBehavior) shouldDrop(packetNumber int) bool {
+	if b.dropAll {
+		return true
+	}
+	if b.initialDrop > 0 && packetNumber <= b.initialDrop {
+		return true
+	}
 	return b.dropEvery > 0 && packetNumber%b.dropEvery == 0
 }
 
@@ -648,6 +666,7 @@ func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider,
 		offset := 0
 		behaviorSent := 0
 		packetNumber := 0
+		behaviorPacketNumber := 0
 		var lastBehavior streamBehavior
 		ticker := time.NewTicker(10 * time.Millisecond)
 		defer ticker.Stop()
@@ -662,13 +681,15 @@ func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider,
 				}
 				if behavior != lastBehavior {
 					behaviorSent = 0
+					behaviorPacketNumber = 0
 					lastBehavior = behavior
 				}
 				payload := payloadProvider()
 				chunk, next := source.ChunkAt(payload, offset)
 				if len(chunk) > 0 {
 					packetNumber++
-					if !behavior.shouldDrop(packetNumber) {
+					behaviorPacketNumber++
+					if !behavior.shouldDrop(behaviorPacketNumber) {
 						if jitter := behavior.jitterFor(packetNumber); jitter > 0 {
 							time.Sleep(jitter)
 						}
@@ -705,6 +726,7 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 		offset := 0
 		behaviorSent := 0
 		packetNumber := 0
+		behaviorPacketNumber := 0
 		var lastBehavior streamBehavior
 		ticker := time.NewTicker(10 * time.Millisecond)
 		defer ticker.Stop()
@@ -719,13 +741,15 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 				}
 				if behavior != lastBehavior {
 					behaviorSent = 0
+					behaviorPacketNumber = 0
 					lastBehavior = behavior
 				}
 				payload := payloadProvider()
 				chunk, next := source.ChunkAt(payload, offset)
 				if len(chunk) > 0 {
 					packetNumber++
-					if !behavior.shouldDrop(packetNumber) {
+					behaviorPacketNumber++
+					if !behavior.shouldDrop(behaviorPacketNumber) {
 						if jitter := behavior.jitterFor(packetNumber); jitter > 0 {
 							time.Sleep(jitter)
 						}

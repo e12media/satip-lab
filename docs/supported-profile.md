@@ -130,17 +130,22 @@ and `503 Service Unavailable` for tuner-busy behavior. See
 | `no_signal` | Valid `SETUP` → `503` with `Reason: no signal`; no tuner allocated |
 | `bad_m3u` | `/channels.m3u` returns malformed playlist content for import/parser tests |
 | `tuner_busy` | Valid `SETUP` → `503` with `Reason: tuner busy`; no tuner allocated |
+| `tuner_wedged` | Valid `SETUP` → `503` with `Reason: tuner wedged` until `POST /api/reset` clears the fault |
 | `rtp_stop` | `PLAY` succeeds, RTP starts, then packet sending stops after a short deterministic burst |
+| `rtp_blackhole` | `PLAY` succeeds and the RTSP session remains alive while all RTP packets are dropped |
 | `slow_rtsp` | RTSP responses are delayed by 250 ms |
+| `cold_boot` | RTSP responses are delayed by a deterministic 750 ms cold-boot style delay |
 | `malformed_psi` | RTP/TS framing remains valid, but generated PAT/PMT table headers are corrupted |
 | `rtp_loss` | Every third RTP packet is dropped |
 | `rtp_jitter` | Every third RTP packet is delayed by 40 ms |
+| `delayed_psi` | Initial RTP packets carrying startup PAT/PMT evidence are delayed before normal RTP resumes |
 | `cc_errors` | MPEG-TS continuity counters are corrupted while packet framing is preserved |
 | `epg_gap` | XMLTV omits a deterministic programme window for a targeted service or mux |
 | `epg_mismatch` | XMLTV uses `zdf-mismatch.invalid` for ZDF HD instead of the M3U `tvg-id` |
 | `epg_stale` | XMLTV `Last-Modified` is 48 hours before the lab clock |
 | `signal_degraded` | RTSP setup/play still succeed while targeted tuner frontend telemetry reports degraded signal/SNR and non-zero BER/PER |
 | `lock_loss` | RTSP setup/play still succeed while targeted tuner frontend telemetry reports lost lock, zero signal/SNR, and high BER/PER |
+| `signal_recovery` | RTSP setup/play still succeed while targeted tuner frontend telemetry reports recovering state before returning to locked |
 | `slow_lock` | RTSP setup/play still succeed while targeted tuner frontend telemetry reports tuning state and `lock_ms=1200` |
 
 See `docs/api.md` for request/response shapes.

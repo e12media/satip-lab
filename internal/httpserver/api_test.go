@@ -366,11 +366,26 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 		if scenario.Name == lab.ScenarioRTPStop && !strings.Contains(scenario.ClientExpectationHint, "3 RTP packets") {
 			t.Fatalf("rtp_stop expectation hint: %+v", scenario)
 		}
+		if scenario.Name == lab.ScenarioTunerWedged && !strings.Contains(scenario.ClientExpectationHint, "tuner wedged") {
+			t.Fatalf("tuner_wedged expectation hint: %+v", scenario)
+		}
+		if scenario.Name == lab.ScenarioColdBoot && !strings.Contains(scenario.ClientExpectationHint, "750 ms") {
+			t.Fatalf("cold_boot expectation hint: %+v", scenario)
+		}
+		if scenario.Name == lab.ScenarioRTPBlackhole && !strings.Contains(scenario.ClientExpectationHint, "session remains alive") {
+			t.Fatalf("rtp_blackhole expectation hint: %+v", scenario)
+		}
+		if scenario.Name == lab.ScenarioDelayedPSI && !strings.Contains(scenario.ClientExpectationHint, "PAT/PMT") {
+			t.Fatalf("delayed_psi expectation hint: %+v", scenario)
+		}
 		if scenario.Name == lab.ScenarioRTPLoss && !strings.Contains(scenario.ClientExpectationHint, "every third") {
 			t.Fatalf("rtp_loss expectation hint: %+v", scenario)
 		}
 		if scenario.Name == lab.ScenarioSignalDegraded && !strings.Contains(scenario.ClientExpectationHint, "frontend.state=degraded") {
 			t.Fatalf("signal_degraded expectation hint: %+v", scenario)
+		}
+		if scenario.Name == lab.ScenarioSignalRecovery && !strings.Contains(scenario.ClientExpectationHint, "frontend.state=recovering") {
+			t.Fatalf("signal_recovery expectation hint: %+v", scenario)
 		}
 	}
 	if len(got.Docs) == 0 || got.Docs[0].Path != "docs/agents/README.md" {

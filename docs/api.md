@@ -309,17 +309,22 @@ Supported values:
 | `no_signal` | Valid RTSP `SETUP` requests return `503 Service Unavailable` with `Reason: no signal`; no tuner or session is allocated. |
 | `bad_m3u` | `/channels.m3u` returns deliberately malformed playlist content with a stable `satip-lab:bad_m3u` marker and no usable RTSP URLs. |
 | `tuner_busy` | Valid RTSP `SETUP` requests return `503 Service Unavailable` with `Reason: tuner busy`; no tuner or session is allocated. |
+| `tuner_wedged` | Valid RTSP `SETUP` requests return `503 Service Unavailable` with `Reason: tuner wedged`; no tuner or session is allocated until `POST /api/reset` clears the wedged fault. |
+| `cold_boot` | RTSP responses are delayed by a deterministic 750 ms to mimic cold-boot startup latency. |
 | `rtp_stop` | RTSP `SETUP` and `PLAY` succeed, then RTP stops after a short deterministic packet burst without an explicit `TEARDOWN`. |
+| `rtp_blackhole` | RTSP `SETUP` and `PLAY` succeed, the RTSP session remains alive, and all RTP packets are dropped. |
 | `slow_rtsp` | RTSP responses are delayed by a deterministic 250 ms. |
 | `malformed_psi` | RTP keeps valid packet framing while generated PAT/PMT table headers are deliberately corrupted. |
 | `rtp_loss` | RTP drops every third packet after `PLAY`. |
 | `rtp_jitter` | RTP adds deterministic 40 ms timing jitter to every third packet. |
+| `delayed_psi` | RTSP `SETUP` and `PLAY` succeed, then the initial RTP packets carrying startup PAT/PMT evidence are delayed before normal RTP resumes. |
 | `cc_errors` | RTP keeps packet framing while MPEG-TS continuity counters are deliberately corrupted. |
 | `epg_gap` | `/epg/xmltv.xml` omits a deterministic programme window for a targeted service or mux. |
 | `epg_mismatch` | `/epg/xmltv.xml` changes the ZDF HD XMLTV channel id to `zdf-mismatch.invalid`. |
 | `epg_stale` | `/epg/xmltv.xml` returns normal XMLTV content with `Last-Modified` set 48 hours before the lab clock. |
 | `signal_degraded` | RTSP setup/play still succeed, while targeted `/api/tuners` frontend telemetry reports `state=degraded`, reduced signal/SNR, and non-zero BER/PER. |
 | `lock_loss` | RTSP setup/play still succeed, while targeted `/api/tuners` frontend telemetry reports `state=lost`, zero signal/SNR, and high BER/PER. When a timeline returns from `lock_loss` to `normal`, the targeted frontend reports `state=recovering` for the deterministic lock window. |
+| `signal_recovery` | RTSP setup/play still succeed, while targeted `/api/tuners` frontend telemetry reports `state=recovering` before returning to locked after the deterministic lock window. |
 | `slow_lock` | RTSP setup/play still succeed, while targeted `/api/tuners` frontend telemetry reports `state=tuning` and `lock_ms=1200`. |
 
 Unknown scenario names return `400 Bad Request` and leave the active scenario unchanged.
@@ -328,7 +333,7 @@ RF frontend telemetry scenarios, and `epg_gap`, to one service, one mux, or the
 intersection of both. Untargeted scenarios remain global. Unknown service or mux
 IDs return `400 Bad Request` and leave the active scenario unchanged.
 
-HTTP-only `bad_m3u`, XMLTV-wide `epg_mismatch` and `epg_stale`, pre-tune `tuner_busy` and `slow_rtsp`, and `normal` behavior are global because there is no resolved service or mux context when those effects are applied. Supplying `service_id` or `mux_id` with a global scenario returns `400 Bad Request`.
+HTTP-only `bad_m3u`, XMLTV-wide `epg_mismatch` and `epg_stale`, pre-tune `tuner_busy`, `tuner_wedged`, `cold_boot`, `slow_rtsp`, and `normal` behavior are global because there is no resolved service or mux context when those effects are applied. Supplying `service_id` or `mux_id` with a global scenario returns `400 Bad Request`.
 
 `epg_gap` also accepts `duration_min`; if omitted, the gap is 60 minutes from the lab clock.
 
@@ -343,4 +348,4 @@ simulator source.
 
 Clears sessions and tuner state, then records a `reset` event.
 
-This endpoint clears the lab model, active RTSP sessions, and active RTP senders owned by the simulator process. It does **not** change the active runtime scenario; use `POST /api/scenario` for that.
+This endpoint clears the lab model, active RTSP sessions, and active RTP senders owned by the simulator process. It does **not** change the active runtime scenario; use `POST /api/scenario` for that. The `tuner_wedged` fault is the exception: reset clears that wedged hardware state and restores `normal`.

@@ -20,6 +20,7 @@ var (
 	ErrScenarioDuration = errors.New("scenario does not support duration_min")
 	ErrScenarioTimeline = errors.New("invalid scenario timeline")
 	ErrNoSignal         = errors.New("no signal")
+	ErrTunerWedged      = errors.New("tuner wedged")
 )
 
 type Manager struct {
@@ -93,17 +94,22 @@ const (
 	ScenarioNoSignal         = "no_signal"
 	ScenarioBadM3U           = "bad_m3u"
 	ScenarioTunerBusy        = "tuner_busy"
+	ScenarioTunerWedged      = "tuner_wedged"
 	ScenarioRTPStop          = "rtp_stop"
 	ScenarioSlowRTSP         = "slow_rtsp"
+	ScenarioColdBoot         = "cold_boot"
 	ScenarioMalformedPSI     = "malformed_psi"
 	ScenarioRTPLoss          = "rtp_loss"
 	ScenarioRTPJitter        = "rtp_jitter"
+	ScenarioRTPBlackhole     = "rtp_blackhole"
+	ScenarioDelayedPSI       = "delayed_psi"
 	ScenarioContinuityErrors = "cc_errors"
 	ScenarioEPGGap           = "epg_gap"
 	ScenarioEPGMismatch      = "epg_mismatch"
 	ScenarioEPGStale         = "epg_stale"
 	ScenarioSignalDegraded   = "signal_degraded"
 	ScenarioLockLoss         = "lock_loss"
+	ScenarioSignalRecovery   = "signal_recovery"
 	ScenarioSlowLock         = "slow_lock"
 )
 
@@ -183,6 +189,10 @@ func (m *Manager) Setup(sessionID, rawQuery, client string) (SetupResult, error)
 	if activeScenario.Name == ScenarioNoSignal && activeScenario.AppliesTo(service, mux) {
 		m.recordLocked(Event{Type: "setup_rejected", ServiceID: service.ID, MuxID: mux.ID, Message: ErrNoSignal.Error()})
 		return SetupResult{}, ErrNoSignal
+	}
+	if activeScenario.Name == ScenarioTunerWedged {
+		m.recordLocked(Event{Type: "tuner_wedged", ServiceID: service.ID, MuxID: mux.ID, Message: ErrTunerWedged.Error()})
+		return SetupResult{}, ErrTunerWedged
 	}
 	if activeScenario.Name == ScenarioTunerBusy {
 		m.recordLocked(Event{Type: "tuner_busy", ServiceID: service.ID, MuxID: mux.ID, Message: ErrNoTunerAvailable.Error()})
@@ -406,6 +416,10 @@ func (m *Manager) Reset() {
 		m.tuners[i].TuneStartedAt = time.Time{}
 		m.tuners[i].Frontend = idleFrontend()
 	}
+	if m.scenario.Name == ScenarioTunerWedged {
+		m.timeline = nil
+		m.scenario = scenarioByName(ScenarioNormal)
+	}
 	m.recordLocked(Event{Type: "reset"})
 }
 
@@ -585,7 +599,7 @@ func (m *Manager) validateTimelineSteps(steps []ScenarioTimelineStep) ([]Scenari
 
 func lookupScenario(name string) (Scenario, bool) {
 	switch name {
-	case ScenarioNormal, ScenarioNoSignal, ScenarioBadM3U, ScenarioTunerBusy, ScenarioRTPStop, ScenarioSlowRTSP, ScenarioMalformedPSI, ScenarioRTPLoss, ScenarioRTPJitter, ScenarioContinuityErrors, ScenarioEPGGap, ScenarioEPGMismatch, ScenarioEPGStale, ScenarioSignalDegraded, ScenarioLockLoss, ScenarioSlowLock:
+	case ScenarioNormal, ScenarioNoSignal, ScenarioBadM3U, ScenarioTunerBusy, ScenarioTunerWedged, ScenarioRTPStop, ScenarioSlowRTSP, ScenarioColdBoot, ScenarioMalformedPSI, ScenarioRTPLoss, ScenarioRTPJitter, ScenarioRTPBlackhole, ScenarioDelayedPSI, ScenarioContinuityErrors, ScenarioEPGGap, ScenarioEPGMismatch, ScenarioEPGStale, ScenarioSignalDegraded, ScenarioLockLoss, ScenarioSignalRecovery, ScenarioSlowLock:
 		return scenarioByName(name), true
 	default:
 		return Scenario{}, false
@@ -598,17 +612,22 @@ func SupportedScenarios() []Scenario {
 		ScenarioNoSignal,
 		ScenarioBadM3U,
 		ScenarioTunerBusy,
+		ScenarioTunerWedged,
 		ScenarioRTPStop,
 		ScenarioSlowRTSP,
+		ScenarioColdBoot,
 		ScenarioMalformedPSI,
 		ScenarioRTPLoss,
 		ScenarioRTPJitter,
+		ScenarioRTPBlackhole,
+		ScenarioDelayedPSI,
 		ScenarioContinuityErrors,
 		ScenarioEPGGap,
 		ScenarioEPGMismatch,
 		ScenarioEPGStale,
 		ScenarioSignalDegraded,
 		ScenarioLockLoss,
+		ScenarioSignalRecovery,
 		ScenarioSlowLock,
 	}
 	scenarios := make([]Scenario, 0, len(names))
@@ -630,7 +649,7 @@ func (s Scenario) AppliesTo(service Service, mux Mux) bool {
 
 func (s Scenario) SupportsTarget() bool {
 	switch s.Name {
-	case ScenarioNoSignal, ScenarioRTPStop, ScenarioMalformedPSI, ScenarioRTPLoss, ScenarioRTPJitter, ScenarioContinuityErrors, ScenarioEPGGap, ScenarioSignalDegraded, ScenarioLockLoss, ScenarioSlowLock:
+	case ScenarioNoSignal, ScenarioRTPStop, ScenarioMalformedPSI, ScenarioRTPLoss, ScenarioRTPJitter, ScenarioRTPBlackhole, ScenarioDelayedPSI, ScenarioContinuityErrors, ScenarioEPGGap, ScenarioSignalDegraded, ScenarioLockLoss, ScenarioSignalRecovery, ScenarioSlowLock:
 		return true
 	default:
 		return false
@@ -683,16 +702,24 @@ func scenarioByName(name string) Scenario {
 		return Scenario{Name: ScenarioBadM3U, Description: "Return deliberately malformed channel list content from /channels.m3u."}
 	case ScenarioTunerBusy:
 		return Scenario{Name: ScenarioTunerBusy, Description: "Reject valid RTSP SETUP requests with a simulated tuner-busy condition before allocation."}
+	case ScenarioTunerWedged:
+		return Scenario{Name: ScenarioTunerWedged, Description: "Reject valid RTSP SETUP requests with a wedged tuner fault until lab reset clears it."}
 	case ScenarioRTPStop:
 		return Scenario{Name: ScenarioRTPStop, Description: "Start RTP after PLAY, then stop sending packets after a short deterministic burst."}
 	case ScenarioSlowRTSP:
 		return Scenario{Name: ScenarioSlowRTSP, Description: "Delay RTSP responses to exercise client timeout and retry handling."}
+	case ScenarioColdBoot:
+		return Scenario{Name: ScenarioColdBoot, Description: "Delay RTSP responses with a longer deterministic cold-boot style startup delay."}
 	case ScenarioMalformedPSI:
 		return Scenario{Name: ScenarioMalformedPSI, Description: "Corrupt PAT/PMT table headers while preserving RTP and MPEG-TS packet framing."}
 	case ScenarioRTPLoss:
 		return Scenario{Name: ScenarioRTPLoss, Description: "Drop a deterministic subset of RTP packets after PLAY."}
 	case ScenarioRTPJitter:
 		return Scenario{Name: ScenarioRTPJitter, Description: "Apply deterministic timing jitter to RTP packet delivery."}
+	case ScenarioRTPBlackhole:
+		return Scenario{Name: ScenarioRTPBlackhole, Description: "Keep the RTSP session alive while dropping all RTP packets."}
+	case ScenarioDelayedPSI:
+		return Scenario{Name: ScenarioDelayedPSI, Description: "Delay the initial RTP packets that carry the first PAT/PMT startup evidence."}
 	case ScenarioContinuityErrors:
 		return Scenario{Name: ScenarioContinuityErrors, Description: "Corrupt MPEG-TS continuity counters while preserving packet framing."}
 	case ScenarioEPGGap:
@@ -705,6 +732,8 @@ func scenarioByName(name string) Scenario {
 		return Scenario{Name: ScenarioSignalDegraded, Description: "Expose degraded deterministic RF frontend telemetry while allowing RTSP setup and playback."}
 	case ScenarioLockLoss:
 		return Scenario{Name: ScenarioLockLoss, Description: "Expose lost-lock deterministic RF frontend telemetry while keeping lab control paths deterministic."}
+	case ScenarioSignalRecovery:
+		return Scenario{Name: ScenarioSignalRecovery, Description: "Expose deterministic recovering-to-locked frontend telemetry after a missing-signal condition."}
 	case ScenarioSlowLock:
 		return Scenario{Name: ScenarioSlowLock, Description: "Expose a slow frontend lock acquisition state and deterministic lock delay telemetry."}
 	default:
@@ -778,8 +807,10 @@ func (m *Manager) recomputeTunerFrontendLocked(tunerID int, now time.Time) {
 			return
 		}
 		frontend := lifecycleFrontend(m.tuners[i].TuneStartedAt, now)
+		timelineRecovery := false
 		if recovery, ok := m.timelineRecoveryFrontendLocked(m.tuners[i], now); ok {
 			frontend = recovery
+			timelineRecovery = true
 		}
 		for _, sessionID := range m.tuners[i].Sessions {
 			session, ok := m.sessions[sessionID]
@@ -793,6 +824,10 @@ func (m *Manager) recomputeTunerFrontendLocked(tunerID int, now time.Time) {
 			mux, ok := m.catalog.MuxByID(session.MuxID)
 			if !ok {
 				continue
+			}
+			if !timelineRecovery && m.scenario.Name == ScenarioSignalRecovery && m.scenario.AppliesTo(service, mux) {
+				frontend = signalRecoveryFrontend(m.tuners[i].TuneStartedAt, now)
+				break
 			}
 			if scenarioFrontend, ok := frontendForScenario(m.scenario, service, mux, now); ok {
 				frontend = scenarioFrontend
@@ -810,7 +845,7 @@ func (m *Manager) timelineRecoveryFrontendLocked(tuner Tuner, now time.Time) (Tu
 	}
 	current := m.timeline.Steps[m.timeline.StepIndex]
 	previous := m.timeline.Steps[m.timeline.StepIndex-1]
-	if current.Name != ScenarioNormal || previous.Name != ScenarioLockLoss {
+	if (current.Name != ScenarioNormal && current.Name != ScenarioSignalRecovery) || previous.Name != ScenarioLockLoss {
 		return TunerFrontend{}, false
 	}
 	recoveryStartedAt := m.timeline.StartedAt.Add(time.Duration(current.AtMS) * time.Millisecond)
@@ -875,6 +910,17 @@ func tuningFrontend(startedAt time.Time) TunerFrontend {
 
 func recoveringFrontend(startedAt time.Time) TunerFrontend {
 	return TunerFrontend{State: FrontendRecovering, SignalStrength: 65, SNRDB: 9.5, BER: 0.00005, PER: 0.005, LockMS: defaultLockMS, LastLockChange: &startedAt}
+}
+
+func signalRecoveryFrontend(startedAt time.Time, now time.Time) TunerFrontend {
+	if startedAt.IsZero() {
+		return recoveringFrontend(now)
+	}
+	recoveredAt := startedAt.Add(defaultLockDuration())
+	if now.Before(recoveredAt) {
+		return recoveringFrontend(startedAt)
+	}
+	return lockedFrontend(recoveredAt)
 }
 
 func lockedFrontend(now time.Time) TunerFrontend {
