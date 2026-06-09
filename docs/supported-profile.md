@@ -166,6 +166,7 @@ See `docs/api.md` for request/response shapes.
 - Sessions on the same mux share one tuner.
 - Sessions on different muxes consume separate tuners.
 - `GET /api/tuners` and `GET /api/status` expose deterministic synthetic frontend telemetry for each tuner: `state`, `signal_strength`, `snr_db`, `ber`, `per`, `lock_ms`, and `last_lock_change`.
+- `GET /api/status` also includes a nested lab-only `hardware` block with uptime, profile-aware identity metadata, stream counts, tuner counts, and simple network counters.
 - Normal tuned frontends report `state=locked`; `signal_degraded`, `lock_loss`, and `slow_lock` provide deterministic RF-like status variants for client UI and retry tests.
 - `TEARDOWN` releases the session and frees a tuner once no sessions remain on its mux.
 - Lab state and active RTP senders are kept in memory and reset on process restart or `POST /api/reset`.
@@ -179,7 +180,7 @@ See `docs/api.md` for request/response shapes.
 - Real RF signal strength, BER, SNR, or frontend hardware measurement
 - Real DVB scanning or RF signal acquisition
 - Real broadcast EPG feeds or full DVB EIT schedule generation
-- SAT>IP HTML UI beyond minimal status page
+- Vendor SAT>IP management APIs beyond the lab-owned status page
 - HTTPS
 - Authentication and vendor-specific management APIs
 - Non-spec vendor quirks unless backed by a documented captured trace or owned-hardware profile
@@ -195,6 +196,7 @@ Designed for SAT>IP client tests such as:
 - RTSP session setup and teardown
 - Tuner pool exhaustion and same-mux sharing (via lab + RTSP)
 - Frontend telemetry UI and retry handling through deterministic `/api/tuners` state
+- Hardware-style status UI and management surface checks through deterministic `/api/status` fields
 - RTP MPEG-TS playback (distinct synthetic TS per service, one decodable ZDF HD sample profile, or one file via `SATIP_LAB_TS_PATH`)
 - Lab observability (`GET /api/status`, `/api/tuners`, `/api/events`)
 

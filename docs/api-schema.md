@@ -1,6 +1,6 @@
 # API Schema
 
-Schema version: **1.6**
+Schema version: **1.7**
 
 This is the stable v1 lab API contract for `satip-lab`. The same custom schema document is available at runtime as JSON from `GET /api/schema`; it is not a JSON Schema or OpenAPI document.
 
@@ -25,6 +25,6 @@ This is the stable v1 lab API contract for `satip-lab`. The same custom schema d
 
 ## Models
 
-The runtime schema lists stable top-level JSON field names for `agent_context`, `clock`, `catalog`, `status`, `tuner`, `frontend`, `session`, `event`, `scenario`, `scenario_timeline`, `scenario_timeline_step`, `mux`, and `service` models.
+The runtime schema lists stable top-level JSON field names for `agent_context`, `clock`, `catalog`, `status`, `hardware_status`, `hardware_identity`, `hardware_streams`, `hardware_tuners`, `hardware_network`, `tuner`, `frontend`, `session`, `event`, `scenario`, `scenario_timeline`, `scenario_timeline_step`, `mux`, and `service` models.
 
 Changing or removing an endpoint, method, model name, or field requires a schema version update.

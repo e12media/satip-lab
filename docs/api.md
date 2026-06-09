@@ -40,9 +40,11 @@ Returns a coding-agent bootstrap document with advertised URLs, test environment
     "xmltv_epg": true,
     "eit_present_following": true,
     "frontend_telemetry": true,
+    "hardware_status": true,
     "rtsp_interleaved_tcp": true,
     "rtsp_rtp_smoke": true,
-    "runtime_scenarios": true
+    "runtime_scenarios": true,
+    "scenario_timelines": true
   },
   "runtime": {
     "tuners": 2,
@@ -104,13 +106,57 @@ Returns the full lab state:
   "tuners": [
     {
       "id": 1,
-      "state": "idle"
+      "state": "idle",
+      "frontend": {
+        "state": "idle",
+        "signal_strength": 0,
+        "snr_db": 0,
+        "ber": 0,
+        "per": 0,
+        "lock_ms": 0
+      }
     }
   ],
   "sessions": [],
-  "events": []
+  "events": [],
+  "hardware": {
+    "lab_only": true,
+    "started_at": "2026-06-09T18:00:00Z",
+    "uptime_ms": 1234,
+    "identity": {
+      "friendly_name": "satip-lab",
+      "manufacturer": "e12media",
+      "model": "SAT>IP Lab Server",
+      "profile": "generic-satip-1.2",
+      "firmware": "satip-lab simulated"
+    },
+    "streams": {
+      "active": 0,
+      "playing": 0,
+      "setup": 0,
+      "paused": 0
+    },
+    "tuners": {
+      "total": 1,
+      "in_use": 0,
+      "idle": 1
+    },
+    "network": {
+      "http_port": 8875,
+      "rtsp_port": 554,
+      "ssdp_port": 1900,
+      "rtsp_sessions": 0,
+      "rtp_streams": 0,
+      "frontend_locks": 0,
+      "recent_events": 0
+    }
+  }
 }
 ```
+
+The `hardware` object is lab-owned and deterministic. It is intended for
+debugging and client tests that expect hardware-like status visibility; it is
+not a vendor management API and does not claim real RF measurements.
 
 ## `GET /api/catalog`
 

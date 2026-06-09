@@ -130,6 +130,14 @@ Deferred from v0.2:
 - [x] `PAUSE`, `TEARDOWN`, and session timeout stop interleaved streaming without closing the RTSP session unexpectedly.
 - [x] UDP RTP behavior remains unchanged.
 
+## v1.11 Hardware-Style Management/Status Surface
+
+- [x] `/api/status` remains backward compatible and adds a nested lab-only `hardware` block.
+- [x] Hardware status includes uptime, profile-aware identity metadata, active stream counts, tuner counts, frontend lock counts, and simple network counters.
+- [x] The minimal HTML status page exposes the same hardware-like state for humans.
+- [x] `/api/agent/context` advertises `hardware_status`.
+- [x] API schema version `1.7` documents the hardware status models.
+
 ## Digital Twin Roadmap
 
 Use a spine-first implementation order: land the current foundations, add
