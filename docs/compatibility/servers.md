@@ -65,3 +65,19 @@ Each entry should include:
 
 When evidence upgrades a profile to `captured-trace` or `owned-hardware`, update
 the matching runtime profile and tests in the same PR.
+
+## Smoke Evidence JSON
+
+`satip-lab-smoke` can emit a machine-readable RTSP/RTP evidence record for
+trace review:
+
+```bash
+go run ./cmd/satip-lab-smoke --json --profile tvheadend
+```
+
+The JSON records the intended profile name, SETUP/PLAY/TEARDOWN status lines,
+observed response headers, session id shape, RTP payload type, received byte
+count, MPEG-TS sync byte, and per-request timings. Use this output as a compact
+artifact when comparing `satip-lab` behavior with a hardware or full-server
+trace. The JSON format is for compatibility review and CI artifacts; it is not a
+runtime profile loading format.

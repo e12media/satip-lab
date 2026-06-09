@@ -98,6 +98,15 @@ Deferred from v0.2:
 - [x] Public compatibility corpus under `docs/compatibility/` with confidence levels and YAML profile records.
 - [x] `SATIP_LAB_VENDOR_PROFILE` remains as an RTSP profile selector alias.
 
+## v1.7 Behavioral Profile Evidence Pipeline
+
+- [x] `satip-lab-smoke --json` emits machine-readable RTSP/RTP evidence for profile review.
+- [x] `satip-lab-smoke --profile <name>` records the intended compatibility profile in JSON evidence.
+- [x] Checked-in compatibility profile YAML is validated by Go tests.
+- [x] Optional behavior evidence fields document trace-backed RTSP/session/timing observations.
+- [x] Non-spec behavior evidence is rejected unless profile confidence is `captured-trace` or `owned-hardware`.
+- [x] Runtime profile loading remains Go-defined; YAML behavior promotion is a later reviewed step.
+
 ## Digital Twin Roadmap
 
 Use a spine-first implementation order: land the current foundations, add
