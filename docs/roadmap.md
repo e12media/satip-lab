@@ -98,10 +98,32 @@ Deferred from v0.2:
 - [x] Public compatibility corpus under `docs/compatibility/` with confidence levels and YAML profile records.
 - [x] `SATIP_LAB_VENDOR_PROFILE` remains as an RTSP profile selector alias.
 
+## Digital Twin Roadmap
+
+Use a spine-first implementation order: land the current foundations, add
+hardware-like observability, then add time-varying faults and evidence-backed
+device personalities. Non-spec vendor behavior remains blocked until sanitized
+trace or owned-hardware evidence exists.
+
+| Priority | Work item | GitHub tracking | Implementation notes |
+|----------|-----------|-----------------|----------------------|
+| P0 | Land current foundation PRs | Issues #4, #5, #6; PRs #3, #13, #14, #15 | Merge in dependency-safe order after maintainer review: behavioral evidence, RF telemetry, scenario timelines, then TCP interleaved RTSP/RTP. Reconcile schema/version docs after merges. |
+| P1 | Hardware-style management/status surface | #11 | Add lab-only hardware-style uptime, firmware/profile metadata, active streams, frontend state, and network counters while keeping `/api/status` backward compatible. |
+| P2 | Frontend/tuner lifecycle V2 | #16 | Model deterministic frontend states such as idle, tuning, locked, degraded, lost, and recovering using RF telemetry and scenario timeline hooks. |
+| P3 | Hardware fault scenarios V1 | #17 | Add explicit deterministic faults such as cold boot delay, wedged tuner until reset, RTP dies while RTSP remains alive, delayed first PAT/PMT, and missing-signal recovery. |
+| P4 | Capture-backed profile ingestion | #9 | Add tooling to validate sanitized RTSP trace or pcap-derived summaries and prepare reviewed profile evidence without runtime YAML behavior loading. |
+| P5 | Trace-backed profile promotion and personality profiles | #7, #12 | Promote one real profile only after evidence exists; implement only documented observed behavior and keep generic/spec behavior stable. |
+| P6 | DVB SI fidelity V1 | #8 | Add bounded fixture-driven SI realism such as SDT/NIT basics, PMT descriptors, PCR timing markers, scrambled flags, or multiple audio descriptors. |
+| P7 | Multi-server and topology simulation | #10 | Support deterministic multiple advertised identities, distinct tuner pools, duplicate names, stale LOCATIONs, and CI guidance for multicast-limited environments. |
+
+Each tracked issue should carry acceptance criteria, implementation notes, a
+test plan, and blocked-by references. Keep P5 issues open until real
+trace-backed or owned-hardware evidence is available.
+
 ## Next High-Value Slices
 
-- Promote metadata-only profiles to trace-backed non-spec behavior after sanitized traces or pcaps are documented.
-- Developer ergonomics: SSE event stream, scripted scenario timeline, `satip-lab-smoke --json`, multi-server discovery.
+- Follow the Digital Twin Roadmap above.
+- Developer ergonomics after the current spine: SSE event stream, richer smoke artifacts, and topology fixtures.
 
 ## Non-goals
 
