@@ -1,6 +1,6 @@
 package httpserver
 
-const APISchemaVersion = "1.5"
+const APISchemaVersion = "1.6"
 
 type APISchema struct {
 	Version   string              `json:"version"`
@@ -47,7 +47,9 @@ func Schema() APISchema {
 			{Name: "frontend", Fields: []string{"state", "signal_strength", "snr_db", "ber", "per", "lock_ms", "last_lock_change"}},
 			{Name: "session", Fields: []string{"id", "state", "tuner_id", "service_id", "service", "mux_id", "pids", "pids_all", "client", "created_at", "updated_at"}},
 			{Name: "event", Fields: []string{"at", "type", "session_id", "tuner_id", "service_id", "mux_id", "message"}},
-			{Name: "scenario", Fields: []string{"name", "description", "service_id", "mux_id", "duration_min"}},
+			{Name: "scenario", Fields: []string{"name", "description", "service_id", "mux_id", "duration_min", "timeline"}},
+			{Name: "scenario_timeline", Fields: []string{"active", "step_index", "elapsed_ms", "steps"}},
+			{Name: "scenario_timeline_step", Fields: []string{"at_ms", "name", "service_id", "mux_id", "duration_min"}},
 			{Name: "mux", Fields: []string{"id", "src", "freq", "pol", "sr", "msys"}},
 			{Name: "service", Fields: []string{"id", "number", "name", "group", "tvg_id", "mux_id", "service_id", "pmt_pid", "video_pid", "audio_pid"}},
 		},

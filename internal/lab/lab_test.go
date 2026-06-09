@@ -380,6 +380,127 @@ func TestDurationOnlyAppliesToEPGGap(t *testing.T) {
 	}
 }
 
+func TestScenarioTimelineAdvancesByElapsedTime(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 2)
+	start := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
+	steps := []lab.ScenarioTimelineStep{
+		{AtMS: 0, Name: lab.ScenarioNormal},
+		{AtMS: 1000, Name: lab.ScenarioSignalDegraded, MuxID: "src1-11362h-22000-dvbs2"},
+		{AtMS: 2500, Name: lab.ScenarioLockLoss, MuxID: "src1-11362h-22000-dvbs2"},
+	}
+
+	if err := manager.SetScenarioTimelineAt(steps, start); err != nil {
+		t.Fatal(err)
+	}
+	if got := manager.ScenarioAt(start.Add(500 * time.Millisecond)); got.Name != lab.ScenarioNormal || got.Timeline == nil || got.Timeline.StepIndex != 0 {
+		t.Fatalf("timeline before first transition: %+v", got)
+	}
+	middle := manager.ScenarioAt(start.Add(1500 * time.Millisecond))
+	if middle.Name != lab.ScenarioSignalDegraded || middle.MuxID != "src1-11362h-22000-dvbs2" || middle.Timeline == nil || middle.Timeline.StepIndex != 1 {
+		t.Fatalf("timeline after degraded transition: %+v", middle)
+	}
+	if got := manager.ScenarioAt(start.Add(3 * time.Second)); got.Name != lab.ScenarioLockLoss || got.Timeline == nil || got.Timeline.StepIndex != 2 || got.Timeline.ElapsedMS != 3000 {
+		t.Fatalf("timeline after lock loss transition: %+v", got)
+	}
+}
+
+func TestScenarioTimelineRecordsTransitionEvents(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 2)
+	start := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
+	if err := manager.SetScenarioTimelineAt([]lab.ScenarioTimelineStep{
+		{AtMS: 0, Name: lab.ScenarioNormal},
+		{AtMS: 1000, Name: lab.ScenarioSignalDegraded},
+	}, start); err != nil {
+		t.Fatal(err)
+	}
+
+	_ = manager.ScenarioAt(start.Add(1500 * time.Millisecond))
+
+	events := manager.Status().Events
+	if len(events) < 2 {
+		t.Fatalf("expected timeline events, got %+v", events)
+	}
+	if events[len(events)-1].Type != "scenario_timeline_step" || events[len(events)-1].Message != lab.ScenarioSignalDegraded {
+		t.Fatalf("expected transition event, got %+v", events)
+	}
+}
+
+func TestStatusAdvancesTimelineTelemetry(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	start := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
+	if err := manager.SetScenarioTimelineAt([]lab.ScenarioTimelineStep{
+		{AtMS: 0, Name: lab.ScenarioNormal},
+		{AtMS: 1000, Name: lab.ScenarioSignalDegraded},
+	}, start); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := manager.StatusAt(start.Add(1500 * time.Millisecond)).Tuners[0].Frontend.State; got != lab.FrontendDegraded {
+		t.Fatalf("status should advance timeline telemetry, got %q", got)
+	}
+}
+
+func TestScenarioTimelineAppliesInitialTelemetryToActiveTuners(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	start := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
+	if _, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.SetScenarioTimelineAt([]lab.ScenarioTimelineStep{
+		{AtMS: 0, Name: lab.ScenarioSignalDegraded},
+		{AtMS: 1000, Name: lab.ScenarioNormal},
+	}, start); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := manager.StatusAt(start).Tuners[0].Frontend.State; got != lab.FrontendDegraded {
+		t.Fatalf("initial timeline step should update telemetry, got %q", got)
+	}
+}
+
+func TestScenarioTimelineRejectsInvalidSteps(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 2)
+	start := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
+
+	if err := manager.SetScenarioTimelineAt(nil, start); err != lab.ErrScenarioTimeline {
+		t.Fatalf("empty timeline: got %v", err)
+	}
+	if err := manager.SetScenarioTimelineAt([]lab.ScenarioTimelineStep{{AtMS: 10, Name: lab.ScenarioNormal}}, start); err != lab.ErrScenarioTimeline {
+		t.Fatalf("timeline without zero start: got %v", err)
+	}
+	if err := manager.SetScenarioTimelineAt([]lab.ScenarioTimelineStep{{AtMS: 0, Name: lab.ScenarioNormal}, {AtMS: 0, Name: lab.ScenarioRTPStop}}, start); err != lab.ErrScenarioTimeline {
+		t.Fatalf("duplicate at_ms: got %v", err)
+	}
+	if err := manager.SetScenarioTimelineAt([]lab.ScenarioTimelineStep{{AtMS: 0, Name: lab.ScenarioNormal}, {AtMS: 500, Name: "missing"}}, start); err != lab.ErrUnknownScenario {
+		t.Fatalf("unknown scenario step: got %v", err)
+	}
+	if err := manager.SetScenarioTimelineAt([]lab.ScenarioTimelineStep{{AtMS: 0, Name: lab.ScenarioNormal}, {AtMS: 500, Name: lab.ScenarioBadM3U, ServiceID: "zdf-hd"}}, start); err != lab.ErrScenarioTarget {
+		t.Fatalf("global scenario target: got %v", err)
+	}
+}
+
+func TestSetScenarioClearsActiveTimeline(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 2)
+	start := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
+	if err := manager.SetScenarioTimelineAt([]lab.ScenarioTimelineStep{
+		{AtMS: 0, Name: lab.ScenarioNormal},
+		{AtMS: 1000, Name: lab.ScenarioSignalDegraded},
+	}, start); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := manager.SetScenario(lab.ScenarioRTPStop); err != nil {
+		t.Fatal(err)
+	}
+
+	got := manager.ScenarioAt(start.Add(1500 * time.Millisecond))
+	if got.Name != lab.ScenarioRTPStop || got.Timeline != nil {
+		t.Fatalf("explicit scenario should clear timeline, got %+v", got)
+	}
+}
+
 func TestTunerBusyScenarioRejectsSetupWithoutAllocatingTuner(t *testing.T) {
 	manager := lab.NewManager(lab.DefaultCatalog(), 1)
 	if err := manager.SetScenario(lab.ScenarioTunerBusy); err != nil {

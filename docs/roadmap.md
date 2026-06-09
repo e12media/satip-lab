@@ -115,6 +115,14 @@ Deferred from v0.2:
 - [x] RF telemetry scenarios support `service_id` and `mux_id` targeting.
 - [x] RTSP setup/play behavior remains unchanged for telemetry-only scenarios.
 
+## v1.9 Scenario Timelines
+
+- [x] `POST /api/scenario` accepts deterministic scenario timelines with elapsed millisecond steps.
+- [x] `GET /api/scenario` exposes active timeline state, step index, elapsed time, and configured steps.
+- [x] Timeline transitions record lab events.
+- [x] Timeline steps reuse existing scenario validation, targeting, and duration rules.
+- [x] Posting a normal scenario object clears an active timeline.
+
 ## Digital Twin Roadmap
 
 Use a spine-first implementation order: land the current foundations, add

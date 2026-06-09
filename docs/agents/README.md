@@ -124,6 +124,17 @@ curl -fsS -X POST "$SATIP_TEST_HTTP_URL/api/scenario" \
   -d '{"name":"normal"}'
 ```
 
+Scenario timelines can make deterministic failures evolve over time:
+
+```bash
+curl -fsS -X POST "$SATIP_TEST_HTTP_URL/api/scenario" \
+  -H 'Content-Type: application/json' \
+  -d '{"timeline":[{"at_ms":0,"name":"normal"},{"at_ms":1000,"name":"signal_degraded","mux_id":"src1-11362h-22000-dvbs2"},{"at_ms":2500,"name":"lock_loss","mux_id":"src1-11362h-22000-dvbs2"}]}'
+```
+
+Poll `GET /api/scenario` for the active step and `timeline.elapsed_ms`; poll
+`GET /api/tuners` when a timeline changes frontend telemetry.
+
 ## CLI Companion
 
 Use `satip-labctl` when a shell command is easier than raw `curl`:

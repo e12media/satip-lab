@@ -137,6 +137,20 @@ func TestTransportStreamPathOverridesEITOptions(t *testing.T) {
 	}
 }
 
+func TestChunkAtWrapsOffsetOutsidePayload(t *testing.T) {
+	source := ts.Source{}
+	payload := []byte("short-payload")
+
+	chunk, next := source.ChunkAt(payload, len(payload)+100)
+
+	if !bytes.Equal(chunk, payload) {
+		t.Fatalf("chunk: got %q", string(chunk))
+	}
+	if next != 0 {
+		t.Fatalf("next offset: got %d", next)
+	}
+}
+
 func TestEnabledSampleProfileReturnsErrorWhenAssetMissing(t *testing.T) {
 	source := ts.Source{SampleProfile: ts.SampleProfileH264AACShort, SampleAssetDir: t.TempDir()}
 

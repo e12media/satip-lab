@@ -152,6 +152,44 @@ func TestServerCallsSetScenarioTool(t *testing.T) {
 	}
 }
 
+func TestServerCallsSetScenarioToolWithTimeline(t *testing.T) {
+	var gotBody bytes.Buffer
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody.ReadFrom(r.Body)
+		if r.URL.Path != "/api/scenario" {
+			t.Fatalf("path: got %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"name":"normal","timeline":{"active":true}}`))
+	}))
+	defer api.Close()
+	server := NewServer(api.URL)
+
+	response := server.Handle(Request{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`4`),
+		Method:  "tools/call",
+		Params:  mustRaw(`{"name":"satip_set_scenario","arguments":{"timeline":[{"at_ms":0,"name":"normal"},{"at_ms":100,"name":"rtp_stop","service_id":"zdf-hd"}]}}`),
+	})
+
+	if response.Error != nil {
+		t.Fatalf("satip_set_scenario timeline error: %+v", response.Error)
+	}
+	body := gotBody.String()
+	if !strings.Contains(body, `"timeline":[`) || !strings.Contains(body, `"at_ms":100`) || !strings.Contains(body, `"service_id":"zdf-hd"`) {
+		t.Fatalf("body: %s", body)
+	}
+}
+
+func TestScenarioToolSchemaAdvertisesTimeline(t *testing.T) {
+	schema := scenarioInputSchema()
+	properties := schema["properties"].(map[string]any)
+	timeline, ok := properties["timeline"].(map[string]any)
+	if !ok || timeline["type"] != "array" {
+		t.Fatalf("timeline schema: %#v", properties["timeline"])
+	}
+}
+
 func mustRaw(raw string) json.RawMessage {
 	return json.RawMessage(raw)
 }

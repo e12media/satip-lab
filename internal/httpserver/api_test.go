@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/e12media/satip-lab/internal/config"
 	"github.com/e12media/satip-lab/internal/httpserver"
@@ -197,7 +198,7 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 	if got.Catalog.Source != "built_in" || got.Catalog.CatalogPath != "" || got.Catalog.FixturePath != "fixtures/astra-19.2e-dach.yaml" {
 		t.Fatalf("catalog source: %+v", got.Catalog)
 	}
-	for _, feature := range []string{"custom_catalogs", "compatibility_profiles", "xmltv_epg", "eit_present_following", "rtsp_rtp_smoke", "runtime_scenarios"} {
+	for _, feature := range []string{"custom_catalogs", "compatibility_profiles", "xmltv_epg", "eit_present_following", "rtsp_rtp_smoke", "runtime_scenarios", "scenario_timelines"} {
 		if !got.Features[feature] {
 			t.Fatalf("missing feature %q in %+v", feature, got.Features)
 		}
@@ -255,7 +256,7 @@ func TestAPISchemaIncludesFrontendTelemetryFields(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Version != "1.5" {
+	if got.Version != "1.6" {
 		t.Fatalf("schema version: got %q", got.Version)
 	}
 	if !modelHasFields(got.Models, "tuner", "frontend") {
@@ -352,6 +353,74 @@ func TestAPIScenarioAcceptsEPGGapDuration(t *testing.T) {
 	}
 	if updated.Name != lab.ScenarioEPGGap || updated.ServiceID != "arte-hd" || updated.DurationMin != 90 {
 		t.Fatalf("updated scenario: %+v", updated)
+	}
+}
+
+func TestAPIScenarioAcceptsTimeline(t *testing.T) {
+	labManager := lab.NewManager(lab.DefaultCatalog(), 2)
+	server := httpserver.New(config.Config{}, labManager)
+	handler := server.Handler()
+
+	body := `{"timeline":[{"at_ms":0,"name":"normal"},{"at_ms":1,"name":"signal_degraded","mux_id":"src1-11362h-22000-dvbs2"}]}`
+	postReq := httptest.NewRequest(http.MethodPost, "/api/scenario", bytes.NewBufferString(body))
+	postRec := httptest.NewRecorder()
+	handler.ServeHTTP(postRec, postReq)
+
+	if postRec.Code != http.StatusOK {
+		t.Fatalf("POST /api/scenario timeline status: got %d body=%s", postRec.Code, postRec.Body.String())
+	}
+	var posted struct {
+		Name     string `json:"name"`
+		Timeline *struct {
+			Active bool `json:"active"`
+			Steps  []struct {
+				AtMS  int    `json:"at_ms"`
+				Name  string `json:"name"`
+				MuxID string `json:"mux_id"`
+			} `json:"steps"`
+		} `json:"timeline"`
+	}
+	if err := json.Unmarshal(postRec.Body.Bytes(), &posted); err != nil {
+		t.Fatal(err)
+	}
+	if posted.Timeline == nil || !posted.Timeline.Active || len(posted.Timeline.Steps) != 2 {
+		t.Fatalf("posted timeline: %+v", posted)
+	}
+
+	time.Sleep(2 * time.Millisecond)
+	getReq := httptest.NewRequest(http.MethodGet, "/api/scenario", nil)
+	getRec := httptest.NewRecorder()
+	handler.ServeHTTP(getRec, getReq)
+
+	var got struct {
+		Name     string `json:"name"`
+		MuxID    string `json:"mux_id"`
+		Timeline *struct {
+			StepIndex int `json:"step_index"`
+			ElapsedMS int `json:"elapsed_ms"`
+		} `json:"timeline"`
+	}
+	if err := json.Unmarshal(getRec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != lab.ScenarioSignalDegraded || got.MuxID != "src1-11362h-22000-dvbs2" || got.Timeline == nil || got.Timeline.StepIndex != 1 {
+		t.Fatalf("timeline scenario after elapsed time: %+v", got)
+	}
+}
+
+func TestAPIScenarioRejectsInvalidTimeline(t *testing.T) {
+	labManager := lab.NewManager(lab.DefaultCatalog(), 2)
+	handler := httpserver.New(config.Config{}, labManager).Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/scenario", bytes.NewBufferString(`{"timeline":[{"at_ms":10,"name":"normal"}]}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid timeline status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := labManager.Scenario().Name; got != lab.ScenarioNormal {
+		t.Fatalf("invalid timeline should not change scenario, got %q", got)
 	}
 }
 
@@ -452,17 +521,19 @@ func TestAPISchema(t *testing.T) {
 		}
 	}
 	wantModels := map[string][]string{
-		"agent_context": {"version", "urls", "test_env", "catalog", "features", "runtime", "compatibility", "scenarios", "docs", "recommended_checks"},
-		"catalog":       {"muxes", "services"},
-		"status":        {"tuners", "sessions", "events"},
-		"tuner":         {"id", "state", "mux_id", "sessions", "frontend"},
-		"frontend":      {"state", "signal_strength", "snr_db", "ber", "per", "lock_ms", "last_lock_change"},
-		"session":       {"id", "state", "tuner_id", "service_id", "service", "mux_id", "pids", "pids_all", "client", "created_at", "updated_at"},
-		"event":         {"at", "type", "session_id", "tuner_id", "service_id", "mux_id", "message"},
-		"clock":         {"mode", "now", "tz"},
-		"scenario":      {"name", "description", "service_id", "mux_id", "duration_min"},
-		"mux":           {"id", "src", "freq", "pol", "sr", "msys"},
-		"service":       {"id", "number", "name", "group", "tvg_id", "mux_id", "service_id", "pmt_pid", "video_pid", "audio_pid"},
+		"agent_context":          {"version", "urls", "test_env", "catalog", "features", "runtime", "compatibility", "scenarios", "docs", "recommended_checks"},
+		"catalog":                {"muxes", "services"},
+		"status":                 {"tuners", "sessions", "events"},
+		"tuner":                  {"id", "state", "mux_id", "sessions", "frontend"},
+		"frontend":               {"state", "signal_strength", "snr_db", "ber", "per", "lock_ms", "last_lock_change"},
+		"session":                {"id", "state", "tuner_id", "service_id", "service", "mux_id", "pids", "pids_all", "client", "created_at", "updated_at"},
+		"event":                  {"at", "type", "session_id", "tuner_id", "service_id", "mux_id", "message"},
+		"clock":                  {"mode", "now", "tz"},
+		"scenario":               {"name", "description", "service_id", "mux_id", "duration_min", "timeline"},
+		"scenario_timeline":      {"active", "step_index", "elapsed_ms", "steps"},
+		"scenario_timeline_step": {"at_ms", "name", "service_id", "mux_id", "duration_min"},
+		"mux":                    {"id", "src", "freq", "pol", "sr", "msys"},
+		"service":                {"id", "number", "name", "group", "tvg_id", "mux_id", "service_id", "pmt_pid", "video_pid", "audio_pid"},
 	}
 	if len(got.Models) != len(wantModels) {
 		t.Fatalf("model count: got %d want %d", len(got.Models), len(wantModels))
