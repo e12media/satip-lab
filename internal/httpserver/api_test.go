@@ -90,6 +90,150 @@ func TestAPITunersExposeFrontendTelemetry(t *testing.T) {
 	}
 }
 
+func TestAPIStatusIncludesHardwareSurface(t *testing.T) {
+	labManager := lab.NewManager(lab.DefaultCatalog(), 2)
+	if _, err := labManager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "192.0.2.10"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := labManager.Play("sess-1"); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		PublicHost:    "satip.test",
+		HTTPPort:      8875,
+		RTSPPort:      554,
+		TunerCount:    2,
+		VendorProfile: "tvheadend",
+	}
+	handler := httpserver.New(cfg, labManager).Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/status status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Tuners   []lab.Tuner   `json:"tuners"`
+		Sessions []lab.Session `json:"sessions"`
+		Events   []lab.Event   `json:"events"`
+		Hardware struct {
+			LabOnly   bool   `json:"lab_only"`
+			StartedAt string `json:"started_at"`
+			UptimeMS  int64  `json:"uptime_ms"`
+			Identity  struct {
+				FriendlyName string `json:"friendly_name"`
+				Manufacturer string `json:"manufacturer"`
+				Model        string `json:"model"`
+				Profile      string `json:"profile"`
+				Firmware     string `json:"firmware"`
+			} `json:"identity"`
+			Streams struct {
+				Active  int `json:"active"`
+				Playing int `json:"playing"`
+				Setup   int `json:"setup"`
+				Paused  int `json:"paused"`
+			} `json:"streams"`
+			Tuners struct {
+				Total int `json:"total"`
+				InUse int `json:"in_use"`
+				Idle  int `json:"idle"`
+			} `json:"tuners"`
+			Network struct {
+				HTTPPort       int `json:"http_port"`
+				RTSPPort       int `json:"rtsp_port"`
+				RTSPSessions   int `json:"rtsp_sessions"`
+				RTPStreams     int `json:"rtp_streams"`
+				FrontendLocks  int `json:"frontend_locks"`
+				RecentEvents   int `json:"recent_events"`
+				AdvertisedSSDP int `json:"ssdp_port"`
+			} `json:"network"`
+		} `json:"hardware"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Tuners) != 2 || len(got.Sessions) != 1 || len(got.Events) == 0 {
+		t.Fatalf("backward compatible status fields missing: %+v", got)
+	}
+	if !got.Hardware.LabOnly || got.Hardware.StartedAt == "" || got.Hardware.UptimeMS < 0 {
+		t.Fatalf("hardware uptime fields: %+v", got.Hardware)
+	}
+	if got.Hardware.Identity.Profile != "tvheadend" || got.Hardware.Identity.FriendlyName != "TVHeadend SAT>IP" || got.Hardware.Identity.Manufacturer != "TVHeadend" || got.Hardware.Identity.Model == "" || got.Hardware.Identity.Firmware == "" {
+		t.Fatalf("hardware identity: %+v", got.Hardware.Identity)
+	}
+	if got.Hardware.Streams.Active != 1 || got.Hardware.Streams.Playing != 1 || got.Hardware.Streams.Setup != 0 || got.Hardware.Streams.Paused != 0 {
+		t.Fatalf("hardware streams: %+v", got.Hardware.Streams)
+	}
+	if got.Hardware.Tuners.Total != 2 || got.Hardware.Tuners.InUse != 1 || got.Hardware.Tuners.Idle != 1 {
+		t.Fatalf("hardware tuners: %+v", got.Hardware.Tuners)
+	}
+	if got.Hardware.Network.HTTPPort != 8875 || got.Hardware.Network.RTSPPort != 554 || got.Hardware.Network.RTSPSessions != 1 || got.Hardware.Network.RTPStreams != 1 || got.Hardware.Network.FrontendLocks != 1 || got.Hardware.Network.RecentEvents == 0 {
+		t.Fatalf("hardware network counters: %+v", got.Hardware.Network)
+	}
+}
+
+func TestAPIStatusHardwareLifecycleUpdatesAfterTeardown(t *testing.T) {
+	labManager := lab.NewManager(lab.DefaultCatalog(), 1)
+	if _, err := labManager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "192.0.2.10"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := labManager.Play("sess-1"); err != nil {
+		t.Fatal(err)
+	}
+	labManager.Teardown("sess-1")
+	handler := httpserver.New(config.Config{TunerCount: 1}, labManager).Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var got struct {
+		Hardware struct {
+			Streams struct {
+				Active  int `json:"active"`
+				Playing int `json:"playing"`
+			} `json:"streams"`
+			Tuners struct {
+				InUse int `json:"in_use"`
+				Idle  int `json:"idle"`
+			} `json:"tuners"`
+		} `json:"hardware"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Hardware.Streams.Active != 0 || got.Hardware.Streams.Playing != 0 || got.Hardware.Tuners.InUse != 0 || got.Hardware.Tuners.Idle != 1 {
+		t.Fatalf("hardware lifecycle after teardown: %+v", got.Hardware)
+	}
+}
+
+func TestStatusPageRendersHardwareSurface(t *testing.T) {
+	labManager := lab.NewManager(lab.DefaultCatalog(), 1)
+	if _, err := labManager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "192.0.2.10"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := labManager.Play("sess-1"); err != nil {
+		t.Fatal(err)
+	}
+	handler := httpserver.New(config.Config{VendorProfile: "tvheadend", TunerCount: 1}, labManager).Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET / status: got %d body=%s", rec.Code, body)
+	}
+	for _, want := range []string{"Hardware status", "TVHeadend SAT&gt;IP", "Active streams", "Frontend state", "locked", "/api/status"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("status page missing %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestReadOnlyAPIEndpointsRejectNonGET(t *testing.T) {
 	handler := httpserver.New(config.Config{}, lab.NewManager(lab.DefaultCatalog(), 1)).Handler()
 
@@ -203,6 +347,9 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 			t.Fatalf("missing feature %q in %+v", feature, got.Features)
 		}
 	}
+	if !got.Features["hardware_status"] {
+		t.Fatalf("missing hardware status feature in %+v", got.Features)
+	}
 	if !got.Features["frontend_telemetry"] {
 		t.Fatalf("missing frontend telemetry feature in %+v", got.Features)
 	}
@@ -256,7 +403,7 @@ func TestAPISchemaIncludesFrontendTelemetryFields(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Version != "1.6" {
+	if got.Version != "1.7" {
 		t.Fatalf("schema version: got %q", got.Version)
 	}
 	if !modelHasFields(got.Models, "tuner", "frontend") {
@@ -264,6 +411,34 @@ func TestAPISchemaIncludesFrontendTelemetryFields(t *testing.T) {
 	}
 	if !modelHasFields(got.Models, "frontend", "state", "signal_strength", "snr_db", "ber", "per", "lock_ms", "last_lock_change") {
 		t.Fatalf("schema frontend model missing telemetry fields: %+v", got.Models)
+	}
+}
+
+func TestAPISchemaIncludesHardwareStatusFields(t *testing.T) {
+	handler := httpserver.New(config.Config{}, lab.NewManager(lab.DefaultCatalog(), 1)).Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/schema", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var got struct {
+		Version string `json:"version"`
+		Models  []struct {
+			Name   string   `json:"name"`
+			Fields []string `json:"fields"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != "1.7" {
+		t.Fatalf("schema version: got %q", got.Version)
+	}
+	if !modelHasFields(got.Models, "status", "hardware") {
+		t.Fatalf("schema status model missing hardware: %+v", got.Models)
+	}
+	if !modelHasFields(got.Models, "hardware_status", "lab_only", "started_at", "uptime_ms", "identity", "streams", "tuners", "network") {
+		t.Fatalf("schema hardware status missing fields: %+v", got.Models)
 	}
 }
 
@@ -523,7 +698,12 @@ func TestAPISchema(t *testing.T) {
 	wantModels := map[string][]string{
 		"agent_context":          {"version", "urls", "test_env", "catalog", "features", "runtime", "compatibility", "scenarios", "docs", "recommended_checks"},
 		"catalog":                {"muxes", "services"},
-		"status":                 {"tuners", "sessions", "events"},
+		"status":                 {"tuners", "sessions", "events", "hardware"},
+		"hardware_status":        {"lab_only", "started_at", "uptime_ms", "identity", "streams", "tuners", "network"},
+		"hardware_identity":      {"friendly_name", "manufacturer", "model", "model_number", "profile", "firmware"},
+		"hardware_streams":       {"active", "playing", "setup", "paused"},
+		"hardware_tuners":        {"total", "in_use", "idle"},
+		"hardware_network":       {"http_port", "rtsp_port", "ssdp_port", "rtsp_sessions", "rtp_streams", "frontend_locks", "recent_events"},
 		"tuner":                  {"id", "state", "mux_id", "sessions", "frontend"},
 		"frontend":               {"state", "signal_strength", "snr_db", "ber", "per", "lock_ms", "last_lock_change"},
 		"session":                {"id", "state", "tuner_id", "service_id", "service", "mux_id", "pids", "pids_all", "client", "created_at", "updated_at"},

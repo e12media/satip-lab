@@ -1,6 +1,6 @@
 package httpserver
 
-const APISchemaVersion = "1.6"
+const APISchemaVersion = "1.7"
 
 type APISchema struct {
 	Version   string              `json:"version"`
@@ -42,7 +42,12 @@ func Schema() APISchema {
 			{Name: "agent_context", Fields: []string{"version", "urls", "test_env", "catalog", "features", "runtime", "compatibility", "scenarios", "docs", "recommended_checks"}},
 			{Name: "clock", Fields: []string{"mode", "now", "tz"}},
 			{Name: "catalog", Fields: []string{"muxes", "services"}},
-			{Name: "status", Fields: []string{"tuners", "sessions", "events"}},
+			{Name: "status", Fields: []string{"tuners", "sessions", "events", "hardware"}},
+			{Name: "hardware_status", Fields: []string{"lab_only", "started_at", "uptime_ms", "identity", "streams", "tuners", "network"}},
+			{Name: "hardware_identity", Fields: []string{"friendly_name", "manufacturer", "model", "model_number", "profile", "firmware"}},
+			{Name: "hardware_streams", Fields: []string{"active", "playing", "setup", "paused"}},
+			{Name: "hardware_tuners", Fields: []string{"total", "in_use", "idle"}},
+			{Name: "hardware_network", Fields: []string{"http_port", "rtsp_port", "ssdp_port", "rtsp_sessions", "rtp_streams", "frontend_locks", "recent_events"}},
 			{Name: "tuner", Fields: []string{"id", "state", "mux_id", "sessions", "frontend"}},
 			{Name: "frontend", Fields: []string{"state", "signal_strength", "snr_db", "ber", "per", "lock_ms", "last_lock_change"}},
 			{Name: "session", Fields: []string{"id", "state", "tuner_id", "service_id", "service", "mux_id", "pids", "pids_all", "client", "created_at", "updated_at"}},
