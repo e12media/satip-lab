@@ -171,6 +171,22 @@ Deferred from v0.2:
 - [x] TS-level tests cover table IDs, PIDs, and client-visible service/network descriptors.
 - [x] Full DVB scanning, bouquet tables, and complete descriptor coverage remain out of scope.
 
+## v1.16 Playback Observability
+
+- [ ] RTP timing and counters are exposed through `/api/sessions` for RTSP setup/play acceptance, first and last RTP sent timestamps, packet counts, byte counts, transport, and destination. Tracked by issue #26.
+- [ ] `/api/events` records bounded RTP lifecycle/progress events without flooding the event buffer. Tracked by issue #26.
+- [ ] `GET /api/playback/diagnostics` summarizes per-session playback diagnostics for client CI and UI evidence. Tracked by issue #27.
+
+## v1.17 Startup Playback Scenarios
+
+- [ ] Startup scenarios cover fast startup, slow first RTP, delayed keyframe diagnostics, and startup-only jitter before lock. Tracked by issue #28.
+- [ ] Startup scenario hints are advertised through `/api/agent/context` for client automation. Tracked by issue #28.
+
+## v1.18 Media Realism Profiles
+
+- [ ] Generated-media profiles distinguish fast-first-decodable-frame behavior from delayed-keyframe behavior. Tracked by issue #29.
+- [ ] A `broadcast_like` sample profile provides a more hardware-like baseline with stable timing cadence, regular PAT/PMT, regular keyframes, and realistic bitrate. Tracked by issue #29.
+
 ## Digital Twin Roadmap
 
 Use a spine-first implementation order: land the current foundations, add
@@ -184,10 +200,14 @@ trace or owned-hardware evidence exists.
 | P1 | Hardware-style management/status surface | #11 | Add lab-only hardware-style uptime, firmware/profile metadata, active streams, frontend state, and network counters while keeping `/api/status` backward compatible. |
 | P2 | Frontend/tuner lifecycle V2 | #16 | Model deterministic frontend states such as idle, tuning, locked, degraded, lost, and recovering using RF telemetry and scenario timeline hooks. |
 | P3 | Hardware fault scenarios V1 | #17 | Add explicit deterministic faults such as cold boot delay, wedged tuner until reset, RTP dies while RTSP remains alive, delayed first PAT/PMT, and missing-signal recovery. |
-| P4 | Capture-backed profile ingestion | #9 | Add tooling to validate sanitized RTSP trace or pcap-derived summaries and prepare reviewed profile evidence without runtime YAML behavior loading. |
-| P5 | Trace-backed profile promotion and personality profiles | #7, #12 | Promote one real profile only after evidence exists; implement only documented observed behavior and keep generic/spec behavior stable. |
-| P6 | DVB SI fidelity V1 | #8 | Add bounded fixture-driven SI realism such as SDT/NIT basics, PMT descriptors, PCR timing markers, scrambled flags, or multiple audio descriptors. |
-| P7 | Multi-server and topology simulation | #10 | Done: `SATIP_LAB_TOPOLOGY` and `/api/topology` expose deterministic multiple identities, distinct tuner pools, duplicate names, stale LOCATIONs, profile-specific paths, and multicast-limited CI guidance. |
+| P4 | Playback observability | #26 | Expose server-side RTSP/RTP timing and counters first so clients can compare simulator send times with client receive times before media generation changes. |
+| P5 | Playback diagnostics summary API | #27 | Add a per-session diagnostics endpoint that aggregates service, scenario, RTP destination, packet rate, continuity-error state, and intentional impairment flags. |
+| P6 | Startup playback scenarios | #28 | Add deterministic startup latency and startup-only impairment scenarios using the existing scenario/timeline model where possible. |
+| P7 | Media realism profiles | #29 | Add GOP/keyframe controls and a broadcast-like sample profile after observability is in place. |
+| P8 | Capture-backed profile ingestion | #9 | Done: validate sanitized RTSP trace or pcap-derived summaries and prepare reviewed profile evidence without runtime YAML behavior loading. |
+| P9 | Trace-backed profile promotion and personality profiles | #7, #12 | Promote one real profile only after evidence exists; implement only documented observed behavior and keep generic/spec behavior stable. |
+| P10 | DVB SI fidelity V1 | #8 | Done: add bounded fixture-driven SI realism such as SDT/NIT basics while keeping full DVB scanning out of scope. |
+| P11 | Multi-server and topology simulation | #10 | Done: `SATIP_LAB_TOPOLOGY` and `/api/topology` expose deterministic multiple identities, distinct tuner pools, duplicate names, stale LOCATIONs, profile-specific paths, and multicast-limited CI guidance. |
 
 Each tracked issue should carry acceptance criteria, implementation notes, a
 test plan, and blocked-by references. Keep P5 issues open until real
@@ -195,7 +215,9 @@ trace-backed or owned-hardware evidence is available.
 
 ## Next High-Value Slices
 
-- Continue evidence-backed profile promotion when sanitized traces or owned-hardware data are available.
+- Land playback observability (#26), then the diagnostics summary API (#27), so client timing evidence is available before stream-generation work.
+- Add startup playback scenarios (#28) once RTP timing can prove the intended server-side delays.
+- Add media realism profiles (#29), then continue evidence-backed profile promotion when sanitized traces or owned-hardware data are available.
 - Developer ergonomics after the current spine: SSE event stream and richer smoke artifacts.
 
 ## Non-goals
