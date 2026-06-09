@@ -34,7 +34,8 @@ acceptance, RTP first/last send timestamps, packet and byte counters, transport,
 and destination.
 
 The `playback_diagnostic` model summarizes active sessions with service,
-scenario, RTP destination, RTP timing, packet rate, continuity-error state, and
-intentional impairment flags.
+scenario, RTP destination, exact UDP ports or interleaved channels, RTP timing,
+observed packet rate after first RTP, continuity-error state, optional exact
+continuity-error count, and intentional impairment flags.
 
 Changing or removing an endpoint, method, model name, or field requires a schema version update.

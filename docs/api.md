@@ -23,7 +23,8 @@ Returns a coding-agent bootstrap document with advertised URLs, test environment
     "schema": "http://127.0.0.1:8875/api/schema",
     "config_schema": "http://127.0.0.1:8875/api/config/schema",
     "status": "http://127.0.0.1:8875/api/status",
-    "topology": "http://127.0.0.1:8875/api/topology"
+    "topology": "http://127.0.0.1:8875/api/topology",
+    "playback_diagnostics": "http://127.0.0.1:8875/api/playback/diagnostics"
   },
   "test_env": {
     "SATIP_TEST_HTTP_URL": "http://127.0.0.1:8875",
@@ -281,9 +282,10 @@ events occur: RTSP `SETUP`, RTSP `PLAY`, and successful RTP sends.
 Returns one diagnostics object per active RTSP session. The summary is derived
 from session observability and the active runtime scenario, and includes service
 id, scenario, RTP destination and ports or interleaved channels, first RTP sent
-timestamp, packet/byte counters, packet rate, continuity-error state, and
-intentional impairment flags such as `malformed_psi`, `delayed_psi`, and
-`continuity_counter_errors`.
+timestamp, packet/byte counters, observed packet rate after first RTP,
+continuity-error state, and intentional impairment flags such as
+`malformed_psi`, `delayed_psi`, and `continuity_counter_errors`. Exact
+continuity-error counts are omitted unless the active telemetry can report them.
 
 ## `GET /api/events`
 

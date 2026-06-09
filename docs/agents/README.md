@@ -83,9 +83,10 @@ client-observed first RTP receive time.
 
 When `features.playback_diagnostics` is true, use `urls.playback_diagnostics`
 or `/api/playback/diagnostics` for a per-session summary of service id, scenario,
-RTP destination, packet rate, continuity-error state, and intentional impairment
-flags. This endpoint is intended for CI assertions and UI diagnostics that should
-not need packet capture.
+RTP destination, exact UDP ports or interleaved channels, observed packet rate,
+continuity-error state, and intentional impairment flags. Exact continuity-error
+counts are omitted unless the active telemetry can report them. This endpoint is
+intended for CI assertions and UI diagnostics that should not need packet capture.
 
 ## Catalog-Aware Tests
 

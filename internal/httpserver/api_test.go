@@ -217,7 +217,7 @@ func TestAPISessionsExposePlaybackObservabilityFields(t *testing.T) {
 	if _, err := labManager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "192.0.2.10"); err != nil {
 		t.Fatal(err)
 	}
-	if err := labManager.SetRTPTransport("sess-1", "udp", "192.0.2.10:5004"); err != nil {
+	if err := labManager.SetRTPTransportDetails("sess-1", "udp", "192.0.2.10:5004", 5004, 7000, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	play, err := labManager.Play("sess-1")
@@ -287,7 +287,7 @@ func TestAPIPlaybackDiagnosticsSummarizesActiveSession(t *testing.T) {
 	if _, err := labManager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "192.0.2.10"); err != nil {
 		t.Fatal(err)
 	}
-	if err := labManager.SetRTPTransport("sess-1", "udp", "192.0.2.10:5004"); err != nil {
+	if err := labManager.SetRTPTransportDetails("sess-1", "udp", "192.0.2.10:5004", 5004, 7000, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	play, err := labManager.Play("sess-1")
@@ -321,7 +321,7 @@ func TestAPIPlaybackDiagnosticsSummarizesActiveSession(t *testing.T) {
 		FirstRTPSentAt         string   `json:"first_rtp_sent_at"`
 		PacketRate             float64  `json:"packet_rate"`
 		ContinuityErrors       bool     `json:"continuity_errors"`
-		ContinuityErrorCount   int      `json:"continuity_error_count"`
+		ContinuityErrorCount   *int     `json:"continuity_error_count"`
 		MalformedPSI           bool     `json:"malformed_psi"`
 		DelayedPSI             bool     `json:"delayed_psi"`
 		DelayedKeyframe        bool     `json:"delayed_keyframe"`
@@ -337,17 +337,46 @@ func TestAPIPlaybackDiagnosticsSummarizesActiveSession(t *testing.T) {
 	if diag.SessionID != "sess-1" || diag.ServiceID != "das-erste-hd" || diag.Scenario != lab.ScenarioContinuityErrors {
 		t.Fatalf("session identity: %+v", diag)
 	}
-	if diag.RTPTransport != "udp" || diag.RTPDestination != "192.0.2.10:5004" || diag.RTPPort != 5004 || diag.RTCPPort != 5005 {
+	if diag.RTPTransport != "udp" || diag.RTPDestination != "192.0.2.10:5004" || diag.RTPPort != 5004 || diag.RTCPPort != 7000 {
 		t.Fatalf("rtp destination: %+v", diag)
 	}
-	if diag.FirstRTPSentAt == "" || diag.PacketRate <= 0 {
+	if diag.FirstRTPSentAt == "" || diag.PacketRate < 1.0 || diag.PacketRate > 1.2 {
 		t.Fatalf("rtp timing: %+v", diag)
 	}
-	if !diag.ContinuityErrors || diag.ContinuityErrorCount != 2 || diag.MalformedPSI || diag.DelayedPSI || diag.DelayedKeyframe {
+	if !diag.ContinuityErrors || diag.ContinuityErrorCount != nil || diag.MalformedPSI || diag.DelayedPSI || diag.DelayedKeyframe {
 		t.Fatalf("impairment flags: %+v", diag)
 	}
 	if !sameStrings(diag.IntentionalImpairments, []string{"continuity_counter_errors"}) {
 		t.Fatalf("intentional impairments: %+v", diag.IntentionalImpairments)
+	}
+}
+
+func TestAPIPlaybackDiagnosticsReportsInterleavedZeroChannel(t *testing.T) {
+	labManager := lab.NewManager(lab.DefaultCatalog(), 1)
+	if _, err := labManager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "192.0.2.10"); err != nil {
+		t.Fatal(err)
+	}
+	rtpChannel := 0
+	rtcpChannel := 1
+	if err := labManager.SetRTPTransportDetails("sess-1", "interleaved_tcp", "interleaved=0-1", 0, 0, &rtpChannel, &rtcpChannel); err != nil {
+		t.Fatal(err)
+	}
+	handler := httpserver.New(config.Config{}, labManager).Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/playback/diagnostics", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var got []struct {
+		RTPTransport string `json:"rtp_transport"`
+		RTPChannel   *int   `json:"rtp_channel"`
+		RTCPChannel  *int   `json:"rtcp_channel"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].RTPTransport != "interleaved_tcp" || got[0].RTPChannel == nil || *got[0].RTPChannel != 0 || got[0].RTCPChannel == nil || *got[0].RTCPChannel != 1 {
+		t.Fatalf("interleaved diagnostics: body=%s decoded=%+v", rec.Body.String(), got)
 	}
 }
 

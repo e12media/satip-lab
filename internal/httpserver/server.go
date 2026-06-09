@@ -8,8 +8,6 @@ import (
 	"html"
 	"net"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/e12media/satip-lab/internal/channels"
@@ -84,16 +82,16 @@ type PlaybackDiagnostic struct {
 	Scenario               string     `json:"scenario"`
 	RTPTransport           string     `json:"rtp_transport,omitempty"`
 	RTPDestination         string     `json:"rtp_destination,omitempty"`
-	RTPPort                int        `json:"rtp_port,omitempty"`
-	RTCPPort               int        `json:"rtcp_port,omitempty"`
-	RTPChannel             int        `json:"rtp_channel,omitempty"`
-	RTCPChannel            int        `json:"rtcp_channel,omitempty"`
+	RTPPort                *int       `json:"rtp_port,omitempty"`
+	RTCPPort               *int       `json:"rtcp_port,omitempty"`
+	RTPChannel             *int       `json:"rtp_channel,omitempty"`
+	RTCPChannel            *int       `json:"rtcp_channel,omitempty"`
 	FirstRTPSentAt         *time.Time `json:"first_rtp_sent_at,omitempty"`
 	RTPPacketCount         int        `json:"rtp_packet_count"`
 	RTPByteCount           int        `json:"rtp_byte_count"`
 	PacketRate             float64    `json:"packet_rate"`
 	ContinuityErrors       bool       `json:"continuity_errors"`
-	ContinuityErrorCount   int        `json:"continuity_error_count"`
+	ContinuityErrorCount   *int       `json:"continuity_error_count,omitempty"`
 	MalformedPSI           bool       `json:"malformed_psi"`
 	DelayedPSI             bool       `json:"delayed_psi"`
 	DelayedKeyframe        bool       `json:"delayed_keyframe"`
@@ -412,41 +410,34 @@ func (s *Server) playbackDiagnostics() []PlaybackDiagnostic {
 }
 
 func packetRate(session lab.Session) float64 {
-	if session.FirstRTPSentAt == nil || session.LastRTPSentAt == nil || session.RTPPacketCount == 0 {
+	if session.FirstRTPSentAt == nil || session.LastRTPSentAt == nil || session.RTPPacketCount < 2 {
 		return 0
 	}
 	elapsed := session.LastRTPSentAt.Sub(*session.FirstRTPSentAt).Seconds()
 	if elapsed <= 0 {
 		return 0
 	}
-	return float64(session.RTPPacketCount) / elapsed
+	return float64(session.RTPPacketCount-1) / elapsed
 }
 
-func playbackTransportFields(session lab.Session) (rtpPort, rtcpPort, rtpChannel, rtcpChannel int) {
-	if strings.HasPrefix(session.RTPDestination, "interleaved=") {
-		parts := strings.SplitN(strings.TrimPrefix(session.RTPDestination, "interleaved="), "-", 2)
-		if len(parts) == 2 {
-			rtpChannel, _ = strconv.Atoi(parts[0])
-			rtcpChannel, _ = strconv.Atoi(parts[1])
-		}
-		return 0, 0, rtpChannel, rtcpChannel
+func playbackTransportFields(session lab.Session) (rtpPort, rtcpPort, rtpChannel, rtcpChannel *int) {
+	if session.RTPPort > 0 {
+		rtpPort = intPtr(session.RTPPort)
 	}
-	_, port, err := net.SplitHostPort(session.RTPDestination)
-	if err != nil {
-		return 0, 0, 0, 0
+	if session.RTCPPort > 0 {
+		rtcpPort = intPtr(session.RTCPPort)
 	}
-	rtpPort, _ = strconv.Atoi(port)
-	if rtpPort > 0 {
-		rtcpPort = rtpPort + 1
-	}
-	return rtpPort, rtcpPort, 0, 0
+	return rtpPort, rtcpPort, session.RTPChannel, session.RTCPChannel
+}
+
+func intPtr(v int) *int {
+	return &v
 }
 
 func applyScenarioDiagnostics(diagnostic *PlaybackDiagnostic, session lab.Session, scenario lab.Scenario) {
 	switch scenario.Name {
 	case lab.ScenarioContinuityErrors:
 		diagnostic.ContinuityErrors = true
-		diagnostic.ContinuityErrorCount = session.RTPPacketCount
 		diagnostic.IntentionalImpairments = append(diagnostic.IntentionalImpairments, "continuity_counter_errors")
 	case lab.ScenarioMalformedPSI:
 		diagnostic.MalformedPSI = true

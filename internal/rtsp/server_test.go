@@ -770,9 +770,11 @@ func TestPlaybackDiagnosticsEndpointReportsRTSPRTPStream(t *testing.T) {
 	}
 	defer server.handleTeardown(request{headers: map[string]string{"session": sessionID}}, "3")
 
-	_ = rtpConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-	if _, _, err := rtpConn.ReadFromUDP(make([]byte, 2048)); err != nil {
-		t.Fatalf("expected RTP packet: %v", err)
+	_ = rtpConn.SetReadDeadline(time.Now().Add(750 * time.Millisecond))
+	for i := 0; i < 2; i++ {
+		if _, _, err := rtpConn.ReadFromUDP(make([]byte, 2048)); err != nil {
+			t.Fatalf("expected RTP packet %d: %v", i+1, err)
+		}
 	}
 
 	req, err := http.NewRequest(http.MethodGet, "/api/playback/diagnostics", nil)
@@ -783,15 +785,20 @@ func TestPlaybackDiagnosticsEndpointReportsRTSPRTPStream(t *testing.T) {
 	httpserver.New(config.Config{}, manager).Handler().ServeHTTP(rec, req)
 
 	var got []struct {
-		SessionID      string `json:"session_id"`
-		ServiceID      string `json:"service_id"`
-		RTPDestination string `json:"rtp_destination"`
-		RTPPacketCount int    `json:"rtp_packet_count"`
+		SessionID      string  `json:"session_id"`
+		ServiceID      string  `json:"service_id"`
+		Scenario       string  `json:"scenario"`
+		RTPDestination string  `json:"rtp_destination"`
+		RTPPort        int     `json:"rtp_port"`
+		RTCPPort       int     `json:"rtcp_port"`
+		FirstRTPSentAt string  `json:"first_rtp_sent_at"`
+		RTPPacketCount int     `json:"rtp_packet_count"`
+		PacketRate     float64 `json:"packet_rate"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if rec.Code != http.StatusOK || len(got) != 1 || got[0].SessionID != sessionID || got[0].ServiceID != "das-erste-hd" || got[0].RTPDestination != "127.0.0.1:"+strconv.Itoa(rtpPort) || got[0].RTPPacketCount < 1 {
+	if rec.Code != http.StatusOK || len(got) != 1 || got[0].SessionID != sessionID || got[0].ServiceID != "das-erste-hd" || got[0].Scenario != lab.ScenarioNormal || got[0].RTPDestination != "127.0.0.1:"+strconv.Itoa(rtpPort) || got[0].RTPPort != rtpPort || got[0].RTCPPort != rtpPort+1 || got[0].FirstRTPSentAt == "" || got[0].RTPPacketCount < 2 || got[0].PacketRate <= 0 {
 		t.Fatalf("diagnostics status=%d body=%s decoded=%+v", rec.Code, rec.Body.String(), got)
 	}
 }
