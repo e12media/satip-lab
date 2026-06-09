@@ -155,6 +155,14 @@ Deferred from v0.2:
 - [x] `signal_recovery` exposes recovering-to-locked frontend telemetry for missing-signal recovery flows.
 - [x] Fault scenarios are documented in docs and `/api/agent/context`.
 
+## v1.14 Capture-Backed Profile Ingestion
+
+- [x] `satip-lab-compat-evidence` validates compact sanitized RTSP trace summary JSON.
+- [x] Evidence summaries separate observed facts from simulator behavior already implemented.
+- [x] The tool emits reviewed compatibility `behavior:` YAML snippets without runtime YAML loading.
+- [x] Existing profile YAML behavior can be checked against a sanitized evidence summary.
+- [x] Missing evidence metadata and non-spec behavior without trace confidence fail with actionable errors.
+
 ## Digital Twin Roadmap
 
 Use a spine-first implementation order: land the current foundations, add
