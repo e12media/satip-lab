@@ -231,16 +231,23 @@ func (s *Server) handleAPIScenario(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, s.lab.Scenario())
 	case http.MethodPost:
 		var req struct {
-			Name        string `json:"name"`
-			ServiceID   string `json:"service_id"`
-			MuxID       string `json:"mux_id"`
-			DurationMin int    `json:"duration_min"`
+			Name        string                     `json:"name"`
+			ServiceID   string                     `json:"service_id"`
+			MuxID       string                     `json:"mux_id"`
+			DurationMin int                        `json:"duration_min"`
+			Timeline    []lab.ScenarioTimelineStep `json:"timeline"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
-		if err := s.lab.SetScenarioOptions(req.Name, req.ServiceID, req.MuxID, req.DurationMin); err != nil {
+		var err error
+		if len(req.Timeline) > 0 {
+			err = s.lab.SetScenarioTimeline(req.Timeline)
+		} else {
+			err = s.lab.SetScenarioOptions(req.Name, req.ServiceID, req.MuxID, req.DurationMin)
+		}
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

@@ -18,6 +18,7 @@ var (
 	ErrUnknownScenario  = errors.New("unknown scenario")
 	ErrScenarioTarget   = errors.New("scenario does not support service or mux targets")
 	ErrScenarioDuration = errors.New("scenario does not support duration_min")
+	ErrScenarioTimeline = errors.New("invalid scenario timeline")
 	ErrNoSignal         = errors.New("no signal")
 )
 
@@ -28,6 +29,7 @@ type Manager struct {
 	sessions map[string]Session
 	events   []Event
 	scenario Scenario
+	timeline *scenarioTimeline
 }
 
 type SetupResult struct {
@@ -113,11 +115,33 @@ const (
 )
 
 type Scenario struct {
+	Name        string                  `json:"name"`
+	Description string                  `json:"description"`
+	ServiceID   string                  `json:"service_id,omitempty"`
+	MuxID       string                  `json:"mux_id,omitempty"`
+	DurationMin int                     `json:"duration_min,omitempty"`
+	Timeline    *ScenarioTimelineStatus `json:"timeline,omitempty"`
+}
+
+type ScenarioTimelineStep struct {
+	AtMS        int    `json:"at_ms"`
 	Name        string `json:"name"`
-	Description string `json:"description"`
 	ServiceID   string `json:"service_id,omitempty"`
 	MuxID       string `json:"mux_id,omitempty"`
 	DurationMin int    `json:"duration_min,omitempty"`
+}
+
+type ScenarioTimelineStatus struct {
+	Active    bool                   `json:"active"`
+	StepIndex int                    `json:"step_index"`
+	ElapsedMS int                    `json:"elapsed_ms"`
+	Steps     []ScenarioTimelineStep `json:"steps"`
+}
+
+type scenarioTimeline struct {
+	StartedAt time.Time
+	StepIndex int
+	Steps     []ScenarioTimelineStep
 }
 
 func NewManager(catalog Catalog, tunerCount int) *Manager {
@@ -149,12 +173,13 @@ func (m *Manager) Setup(sessionID, rawQuery, client string) (SetupResult, error)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	activeScenario := m.scenarioAtLocked(time.Now().UTC())
 
-	if m.scenario.Name == ScenarioNoSignal && m.scenario.AppliesTo(service, mux) {
+	if activeScenario.Name == ScenarioNoSignal && activeScenario.AppliesTo(service, mux) {
 		m.recordLocked(Event{Type: "setup_rejected", ServiceID: service.ID, MuxID: mux.ID, Message: ErrNoSignal.Error()})
 		return SetupResult{}, ErrNoSignal
 	}
-	if m.scenario.Name == ScenarioTunerBusy {
+	if activeScenario.Name == ScenarioTunerBusy {
 		m.recordLocked(Event{Type: "tuner_busy", ServiceID: service.ID, MuxID: mux.ID, Message: ErrNoTunerAvailable.Error()})
 		return SetupResult{}, ErrNoTunerAvailable
 	}
@@ -340,8 +365,13 @@ func (m *Manager) Teardown(sessionID string) {
 }
 
 func (m *Manager) Status() Status {
+	return m.StatusAt(time.Now().UTC())
+}
+
+func (m *Manager) StatusAt(now time.Time) Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.scenarioAtLocked(now.UTC())
 
 	sessions := make([]Session, 0, len(m.sessions))
 	for _, session := range m.sessions {
@@ -373,9 +403,13 @@ func (m *Manager) Reset() {
 }
 
 func (m *Manager) Scenario() Scenario {
+	return m.ScenarioAt(time.Now().UTC())
+}
+
+func (m *Manager) ScenarioAt(now time.Time) Scenario {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.scenario
+	return m.scenarioAtLocked(now.UTC())
 }
 
 func requestedPIDs(rawQuery string, service Service) ([]int, bool, error) {
@@ -472,10 +506,74 @@ func (m *Manager) SetScenarioOptions(name, serviceID, muxID string, durationMin 
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.scenarioAtLocked(time.Now().UTC())
 	m.scenario = scenario
+	m.timeline = nil
 	m.recomputeAllFrontendsLocked(time.Now().UTC())
 	m.recordLocked(Event{Type: "scenario_changed", Message: scenario.Name})
 	return nil
+}
+
+func (m *Manager) SetScenarioTimeline(steps []ScenarioTimelineStep) error {
+	return m.SetScenarioTimelineAt(steps, time.Now().UTC())
+}
+
+func (m *Manager) SetScenarioTimelineAt(steps []ScenarioTimelineStep, now time.Time) error {
+	validated, err := m.validateTimelineSteps(steps)
+	if err != nil {
+		return err
+	}
+	first := scenarioFromTimelineStep(validated[0])
+	first.Timeline = &ScenarioTimelineStatus{
+		Active:    true,
+		StepIndex: 0,
+		ElapsedMS: 0,
+		Steps:     append([]ScenarioTimelineStep(nil), validated...),
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.timeline = &scenarioTimeline{StartedAt: now.UTC(), StepIndex: 0, Steps: validated}
+	m.scenario = first
+	m.recomputeAllFrontendsLocked(now.UTC())
+	m.recordLocked(Event{Type: "scenario_timeline_started", Message: first.Name})
+	return nil
+}
+
+func (m *Manager) validateTimelineSteps(steps []ScenarioTimelineStep) ([]ScenarioTimelineStep, error) {
+	if len(steps) == 0 || steps[0].AtMS != 0 {
+		return nil, ErrScenarioTimeline
+	}
+	validated := make([]ScenarioTimelineStep, len(steps))
+	previous := -1
+	for i, step := range steps {
+		if step.AtMS < 0 || step.AtMS < previous {
+			return nil, ErrScenarioTimeline
+		}
+		previous = step.AtMS
+		scenario, ok := lookupScenario(step.Name)
+		if !ok {
+			return nil, ErrUnknownScenario
+		}
+		if (step.ServiceID != "" || step.MuxID != "") && !scenario.SupportsTarget() {
+			return nil, ErrScenarioTarget
+		}
+		if step.DurationMin > 0 && scenario.Name != ScenarioEPGGap {
+			return nil, ErrScenarioDuration
+		}
+		if step.ServiceID != "" {
+			if _, ok := m.catalog.ServiceByID(step.ServiceID); !ok {
+				return nil, ErrServiceNotFound
+			}
+		}
+		if step.MuxID != "" {
+			if _, ok := m.catalog.MuxByID(step.MuxID); !ok {
+				return nil, ErrInvalidTune
+			}
+		}
+		validated[i] = step
+	}
+	return validated, nil
 }
 
 func lookupScenario(name string) (Scenario, bool) {
@@ -530,6 +628,44 @@ func (s Scenario) SupportsTarget() bool {
 	default:
 		return false
 	}
+}
+
+func (m *Manager) scenarioAtLocked(now time.Time) Scenario {
+	if m.timeline == nil {
+		return m.scenario
+	}
+	elapsedMS := int(now.Sub(m.timeline.StartedAt) / time.Millisecond)
+	if elapsedMS < 0 {
+		elapsedMS = 0
+	}
+	stepIndex := m.timeline.StepIndex
+	for i, step := range m.timeline.Steps {
+		if step.AtMS <= elapsedMS {
+			stepIndex = i
+		}
+	}
+	if stepIndex != m.timeline.StepIndex {
+		m.timeline.StepIndex = stepIndex
+		m.scenario = scenarioFromTimelineStep(m.timeline.Steps[stepIndex])
+		m.recomputeAllFrontendsLocked(now)
+		m.recordLocked(Event{Type: "scenario_timeline_step", Message: m.scenario.Name})
+	}
+	scenario := m.scenario
+	scenario.Timeline = &ScenarioTimelineStatus{
+		Active:    true,
+		StepIndex: m.timeline.StepIndex,
+		ElapsedMS: elapsedMS,
+		Steps:     append([]ScenarioTimelineStep(nil), m.timeline.Steps...),
+	}
+	return scenario
+}
+
+func scenarioFromTimelineStep(step ScenarioTimelineStep) Scenario {
+	scenario := scenarioByName(step.Name)
+	scenario.ServiceID = step.ServiceID
+	scenario.MuxID = step.MuxID
+	scenario.DurationMin = step.DurationMin
+	return scenario
 }
 
 func scenarioByName(name string) Scenario {
