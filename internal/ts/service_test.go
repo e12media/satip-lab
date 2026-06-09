@@ -173,6 +173,9 @@ func TestSyntheticServiceTransportIncludesSDTAndNIT(t *testing.T) {
 	if sdt[0][0] != 0x42 {
 		t.Fatalf("SDT table id: got 0x%x", sdt[0][0])
 	}
+	if sdt[0][1]&0xF0 != 0xF0 {
+		t.Fatalf("SDT section syntax/reserved bits: got 0x%x", sdt[0][1])
+	}
 	if got := int(sdt[0][3])<<8 | int(sdt[0][4]); got != 1 {
 		t.Fatalf("SDT transport stream id: got %d", got)
 	}
@@ -182,6 +185,9 @@ func TestSyntheticServiceTransportIncludesSDTAndNIT(t *testing.T) {
 	if !bytes.Contains(sdt[0], []byte("satip-lab")) || !bytes.Contains(sdt[0], []byte("Das Erste HD")) {
 		t.Fatalf("SDT missing provider/service descriptor: % x", sdt[0])
 	}
+	if sdt[0][13]&0x02 == 0 {
+		t.Fatalf("SDT should advertise EIT present/following in normal synthetic TS: flags=0x%x", sdt[0][13])
+	}
 
 	nit := sectionsByPID(payload, 0x10)
 	if len(nit) != 1 {
@@ -190,11 +196,33 @@ func TestSyntheticServiceTransportIncludesSDTAndNIT(t *testing.T) {
 	if nit[0][0] != 0x40 {
 		t.Fatalf("NIT table id: got 0x%x", nit[0][0])
 	}
+	if nit[0][1]&0xF0 != 0xF0 {
+		t.Fatalf("NIT section syntax/reserved bits: got 0x%x", nit[0][1])
+	}
 	if got := int(nit[0][3])<<8 | int(nit[0][4]); got != 1 {
 		t.Fatalf("NIT network id: got %d", got)
 	}
 	if !bytes.Contains(nit[0], []byte("satip-lab DVB-S2")) {
 		t.Fatalf("NIT missing network name descriptor: % x", nit[0])
+	}
+}
+
+func TestSyntheticServiceTransportClearsSDTEITFlagWhenEITSuppressed(t *testing.T) {
+	payload := ts.SyntheticServiceTransportWithOptions(ts.ServiceProfile{
+		ID:        "das-erste-hd",
+		Name:      "Das Erste HD",
+		ServiceID: 1001,
+		PMTPID:    5100,
+		VideoPID:  5101,
+		AudioPID:  5102,
+	}, ts.EITOptions{Suppress: true})
+
+	sdt := sectionsByPID(payload, 0x11)
+	if len(sdt) != 1 {
+		t.Fatalf("SDT sections on PID 0x11: got %d", len(sdt))
+	}
+	if sdt[0][13]&0x02 != 0 {
+		t.Fatalf("SDT should not advertise EIT present/following when suppressed: flags=0x%x", sdt[0][13])
 	}
 }
 

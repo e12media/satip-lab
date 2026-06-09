@@ -40,7 +40,7 @@ func SyntheticServiceTransportWithOptions(profile ServiceProfile, eit EITOptions
 		}
 	}
 	packets = append(packets,
-		syntheticPacket(0x11, true, 0, psiPayload(sdtSection(profile))),
+		syntheticPacket(0x11, true, 0, psiPayload(sdtSection(profile, !eit.Suppress))),
 		syntheticPacket(0x10, true, 0, psiPayload(nitSection())),
 	)
 
@@ -191,12 +191,16 @@ func pmtSection(profile ServiceProfile) []byte {
 	return appendCRC(section)
 }
 
-func sdtSection(profile ServiceProfile) []byte {
+func sdtSection(profile ServiceProfile, eitPresentFollowing bool) []byte {
 	descriptor := serviceDescriptor("satip-lab", profile.Name)
 	loopLength := len(descriptor)
+	eitFlags := byte(0xFC)
+	if eitPresentFollowing {
+		eitFlags |= 0x02
+	}
 	section := []byte{
 		0x42,
-		0xB0, 0x00,
+		0xF0, 0x00,
 		0x00, 0x01,
 		0xC1,
 		0x00,
@@ -204,13 +208,13 @@ func sdtSection(profile ServiceProfile) []byte {
 		0x00, 0x01,
 		0xFF,
 		byte(profile.ServiceID >> 8), byte(profile.ServiceID),
-		0xFC,
+		eitFlags,
 		0x80 | byte((loopLength>>8)&0x0F),
 		byte(loopLength),
 	}
 	section = append(section, descriptor...)
 	sectionLength := len(section) - 3 + 4
-	section[1] = 0xB0 | byte((sectionLength>>8)&0x0F)
+	section[1] = 0xF0 | byte((sectionLength>>8)&0x0F)
 	section[2] = byte(sectionLength)
 	return appendCRC(section)
 }
@@ -220,7 +224,7 @@ func nitSection() []byte {
 	networkLoopLength := len(networkDescriptor)
 	section := []byte{
 		0x40,
-		0xB0, 0x00,
+		0xF0, 0x00,
 		0x00, 0x01,
 		0xC1,
 		0x00,
@@ -236,7 +240,7 @@ func nitSection() []byte {
 		0xF0, 0x00,
 	)
 	sectionLength := len(section) - 3 + 4
-	section[1] = 0xB0 | byte((sectionLength>>8)&0x0F)
+	section[1] = 0xF0 | byte((sectionLength>>8)&0x0F)
 	section[2] = byte(sectionLength)
 	return appendCRC(section)
 }
