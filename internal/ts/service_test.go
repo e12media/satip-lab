@@ -156,6 +156,48 @@ func TestSyntheticServiceTransportIncludesEITPresentFollowingPackets(t *testing.
 	}
 }
 
+func TestSyntheticServiceTransportIncludesSDTAndNIT(t *testing.T) {
+	payload := ts.SyntheticServiceTransport(ts.ServiceProfile{
+		ID:        "das-erste-hd",
+		Name:      "Das Erste HD",
+		ServiceID: 1001,
+		PMTPID:    5100,
+		VideoPID:  5101,
+		AudioPID:  5102,
+	})
+
+	sdt := sectionsByPID(payload, 0x11)
+	if len(sdt) != 1 {
+		t.Fatalf("SDT sections on PID 0x11: got %d", len(sdt))
+	}
+	if sdt[0][0] != 0x42 {
+		t.Fatalf("SDT table id: got 0x%x", sdt[0][0])
+	}
+	if got := int(sdt[0][3])<<8 | int(sdt[0][4]); got != 1 {
+		t.Fatalf("SDT transport stream id: got %d", got)
+	}
+	if got := int(sdt[0][8])<<8 | int(sdt[0][9]); got != 1 {
+		t.Fatalf("SDT original network id: got %d", got)
+	}
+	if !bytes.Contains(sdt[0], []byte("satip-lab")) || !bytes.Contains(sdt[0], []byte("Das Erste HD")) {
+		t.Fatalf("SDT missing provider/service descriptor: % x", sdt[0])
+	}
+
+	nit := sectionsByPID(payload, 0x10)
+	if len(nit) != 1 {
+		t.Fatalf("NIT sections on PID 0x10: got %d", len(nit))
+	}
+	if nit[0][0] != 0x40 {
+		t.Fatalf("NIT table id: got 0x%x", nit[0][0])
+	}
+	if got := int(nit[0][3])<<8 | int(nit[0][4]); got != 1 {
+		t.Fatalf("NIT network id: got %d", got)
+	}
+	if !bytes.Contains(nit[0], []byte("satip-lab DVB-S2")) {
+		t.Fatalf("NIT missing network name descriptor: % x", nit[0])
+	}
+}
+
 func TestSyntheticServiceTransportUsesExpectedPATAndPMTPIDs(t *testing.T) {
 	payload := ts.SyntheticServiceTransport(ts.ServiceProfile{
 		ID:        "das-erste-hd",
@@ -166,8 +208,8 @@ func TestSyntheticServiceTransportUsesExpectedPATAndPMTPIDs(t *testing.T) {
 		AudioPID:  5102,
 	})
 
-	pids := firstPIDs(payload, 6)
-	want := []uint16{0, 5100, 0x12, 0x12, 5101, 5102}
+	pids := firstPIDs(payload, 8)
+	want := []uint16{0, 5100, 0x12, 0x12, 0x11, 0x10, 5101, 5102}
 	for i := range want {
 		if pids[i] != want[i] {
 			t.Fatalf("pid[%d]: got %d want %d; all=%v", i, pids[i], want[i], pids)

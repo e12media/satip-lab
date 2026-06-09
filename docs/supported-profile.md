@@ -75,15 +75,17 @@ spec-compatible RTSP behavior and use the normal lab RTP/tuner model.
 - `GET /api/clock` returns the active EPG clock.
 - Schedule density is mixed by service for realistic client list behavior. See `docs/epg.md`.
 
-## In-stream EIT
+## In-stream SI
 
 - Generated synthetic service TS includes minimal DVB EIT present/following sections on PID `0x0012`.
 - EIT p/f uses table id `0x4E`, section `0` for present and section `1` for following.
 - EIT event names and timing are derived from the same deterministic `SATIP_LAB_EPG_CLOCK` schedule model as XMLTV.
+- Generated synthetic service TS includes a minimal SDT actual section on PID `0x0011` with provider `satip-lab` and the tuned service name.
+- Generated synthetic service TS includes a minimal NIT actual section on PID `0x0010` with network name `satip-lab DVB-S2`.
 - Runtime `epg_gap` suppresses generated EIT p/f for the targeted service or mux while synthetic media packets continue.
 - Runtime `epg_mismatch` remains XMLTV-only; EIT stays bound to the tuned service id.
 - Runtime `epg_stale` affects HTTP `Last-Modified` only and does not change TS packets.
-- EIT is generated only for synthetic service TS. `SATIP_LAB_TS_PATH` and decodable sample profiles are served unchanged.
+- SI tables are generated only for synthetic service TS. `SATIP_LAB_TS_PATH` and decodable sample profiles are served unchanged.
 
 ## RTSP
 
@@ -160,7 +162,7 @@ See `docs/api.md` for request/response shapes.
 - Runtime `malformed_psi` scenario corrupts generated PAT/PMT table headers while keeping RTP and MPEG-TS packet boundaries intact.
 - Runtime `rtp_loss`, `rtp_jitter`, and `cc_errors` scenarios apply deterministic RTP/TS impairments for repeatable client tests.
 - `/api/agent/context` includes client expectation hints for deterministic RTP scenarios, including the `rtp_stop` packet count, `rtp_loss` cadence, `rtp_jitter` delay, and expected parser or recovery symptom.
-- By default, each service gets distinct generated MPEG-TS packets with PAT/PMT-shaped PSI, minimal EIT p/f, PES-like audio/video payloads, and service-specific markers.
+- By default, each service gets distinct generated MPEG-TS packets with PAT/PMT-shaped PSI, minimal EIT p/f, minimal SDT/NIT, PES-like audio/video payloads, and service-specific markers.
 - If `SATIP_LAB_SAMPLE_PROFILE=h264_aac_short`, ZDF HD uses a generated H.264/AAC MPEG-TS test pattern; all other services keep distinct synthetic TS.
 - If `SATIP_LAB_SAMPLE_PROFILE=h264_silent`, ZDF HD uses the same style of H.264 test pattern with silent AAC audio for audio-selection and muted-audio behavior tests.
 - If `SATIP_LAB_TS_PATH` points to a readable file, that file is looped for every service instead.
@@ -186,6 +188,7 @@ See `docs/api.md` for request/response shapes.
 - Real RF signal strength, BER, SNR, or frontend hardware measurement
 - Real DVB scanning or RF signal acquisition
 - Real broadcast EPG feeds or full DVB EIT schedule generation
+- Full DVB SI scanning, bouquet tables, regional NIT variants, or complete descriptor coverage
 - Vendor SAT>IP management APIs beyond the lab-owned status page
 - HTTPS
 - Authentication and vendor-specific management APIs

@@ -163,6 +163,14 @@ Deferred from v0.2:
 - [x] Existing profile YAML behavior can be checked against a sanitized evidence summary.
 - [x] Missing evidence metadata and non-spec behavior without trace confidence fail with actionable errors.
 
+## v1.15 DVB SI Fidelity V1
+
+- [x] Generated synthetic TS includes minimal SDT actual on PID `0x0011`.
+- [x] Generated synthetic TS includes minimal NIT actual on PID `0x0010`.
+- [x] Existing PAT/PMT and EIT p/f packet order remains deterministic.
+- [x] TS-level tests cover table IDs, PIDs, and client-visible service/network descriptors.
+- [x] Full DVB scanning, bouquet tables, and complete descriptor coverage remain out of scope.
+
 ## Digital Twin Roadmap
 
 Use a spine-first implementation order: land the current foundations, add

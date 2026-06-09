@@ -68,7 +68,7 @@ curl -fsS "$SATIP_TEST_HTTP_URL/epg/xmltv.xml" | grep -q "zdf.de"
 After basic HTTP checks, run the client project's own RTSP/RTP integration tests against `SATIP_TEST_RTSP_URL`.
 Clients that support TCP fallback can request `RTP/AVP/TCP;unicast;interleaved=0-1`
 in SETUP and assert `$`-framed RTP payload type 33 on the RTSP TCP connection.
-For guide clients that parse in-stream DVB data, include a test for synthetic EIT present/following on PID `0x0012` when using generated TS.
+For guide clients that parse in-stream DVB data, include tests for synthetic EIT present/following on PID `0x0012`, SDT actual on PID `0x0011`, and NIT actual on PID `0x0010` when using generated TS.
 
 ## Catalog-Aware Tests
 
