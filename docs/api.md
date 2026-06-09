@@ -39,6 +39,7 @@ Returns a coding-agent bootstrap document with advertised URLs, test environment
     "compatibility_profiles": true,
     "xmltv_epg": true,
     "eit_present_following": true,
+    "frontend_telemetry": true,
     "rtsp_rtp_smoke": true,
     "runtime_scenarios": true
   },
@@ -154,7 +155,32 @@ Returns services/channels:
 
 ## `GET /api/tuners`
 
-Returns tuner state. A tuned tuner includes its mux and session ids.
+Returns tuner state. A tuned tuner includes its mux, session ids, and
+deterministic frontend telemetry:
+
+```json
+[
+  {
+    "id": 1,
+    "state": "tuned",
+    "mux_id": "src1-11494h-22000-dvbs2",
+    "sessions": ["00000001"],
+    "frontend": {
+      "state": "locked",
+      "signal_strength": 88,
+      "snr_db": 13.5,
+      "ber": 0,
+      "per": 0,
+      "lock_ms": 250,
+      "last_lock_change": "2026-06-09T12:00:00Z"
+    }
+  }
+]
+```
+
+Frontend `state` is one of `idle`, `tuning`, `locked`, `degraded`, or `lost`.
+The values are synthetic and deterministic, intended for client status and
+retry tests rather than real RF measurement.
 
 ## `GET /api/sessions`
 
@@ -204,15 +230,26 @@ Supported values:
 | `epg_gap` | `/epg/xmltv.xml` omits a deterministic programme window for a targeted service or mux. |
 | `epg_mismatch` | `/epg/xmltv.xml` changes the ZDF HD XMLTV channel id to `zdf-mismatch.invalid`. |
 | `epg_stale` | `/epg/xmltv.xml` returns normal XMLTV content with `Last-Modified` set 48 hours before the lab clock. |
+| `signal_degraded` | RTSP setup/play still succeed, while targeted `/api/tuners` frontend telemetry reports `state=degraded`, reduced signal/SNR, and non-zero BER/PER. |
+| `lock_loss` | RTSP setup/play still succeed, while targeted `/api/tuners` frontend telemetry reports `state=lost`, zero signal/SNR, and high BER/PER. |
+| `slow_lock` | RTSP setup/play still succeed, while targeted `/api/tuners` frontend telemetry reports `state=tuning` and `lock_ms=1200`. |
 
 Unknown scenario names return `400 Bad Request` and leave the active scenario unchanged.
-Optional `service_id` and `mux_id` fields scope tune-aware RTSP/RTP scenarios, and `epg_gap`, to one service, one mux, or the intersection of both. Untargeted scenarios remain global. Unknown service or mux IDs return `400 Bad Request` and leave the active scenario unchanged.
+Optional `service_id` and `mux_id` fields scope tune-aware RTSP/RTP scenarios,
+RF frontend telemetry scenarios, and `epg_gap`, to one service, one mux, or the
+intersection of both. Untargeted scenarios remain global. Unknown service or mux
+IDs return `400 Bad Request` and leave the active scenario unchanged.
 
 HTTP-only `bad_m3u`, XMLTV-wide `epg_mismatch` and `epg_stale`, pre-tune `tuner_busy` and `slow_rtsp`, and `normal` behavior are global because there is no resolved service or mux context when those effects are applied. Supplying `service_id` or `mux_id` with a global scenario returns `400 Bad Request`.
 
 `epg_gap` also accepts `duration_min`; if omitted, the gap is 60 minutes from the lab clock.
 
-Agent context scenario entries also include `client_expectation_hint` when the scenario has a deterministic client-observable symptom. RTP hints document packet stop counts, loss cadence, jitter delay, continuity-counter corruption, and malformed PSI expectations so client evidence can be generated without reading simulator source.
+Agent context scenario entries also include `client_expectation_hint` when the
+scenario has a deterministic client-observable symptom. RTP hints document
+packet stop counts, loss cadence, jitter delay, continuity-counter corruption,
+and malformed PSI expectations. Frontend telemetry hints document expected
+`/api/tuners` values so client evidence can be generated without reading
+simulator source.
 
 ## `POST /api/reset`
 

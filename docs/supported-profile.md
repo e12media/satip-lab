@@ -138,6 +138,9 @@ and `503 Service Unavailable` for tuner-busy behavior. See
 | `epg_gap` | XMLTV omits a deterministic programme window for a targeted service or mux |
 | `epg_mismatch` | XMLTV uses `zdf-mismatch.invalid` for ZDF HD instead of the M3U `tvg-id` |
 | `epg_stale` | XMLTV `Last-Modified` is 48 hours before the lab clock |
+| `signal_degraded` | RTSP setup/play still succeed while targeted tuner frontend telemetry reports degraded signal/SNR and non-zero BER/PER |
+| `lock_loss` | RTSP setup/play still succeed while targeted tuner frontend telemetry reports lost lock, zero signal/SNR, and high BER/PER |
+| `slow_lock` | RTSP setup/play still succeed while targeted tuner frontend telemetry reports tuning state and `lock_ms=1200` |
 
 See `docs/api.md` for request/response shapes.
 
@@ -160,16 +163,18 @@ See `docs/api.md` for request/response shapes.
 - `SATIP_LAB_TUNERS` controls the simulated tuner count.
 - Sessions on the same mux share one tuner.
 - Sessions on different muxes consume separate tuners.
+- `GET /api/tuners` and `GET /api/status` expose deterministic synthetic frontend telemetry for each tuner: `state`, `signal_strength`, `snr_db`, `ber`, `per`, `lock_ms`, and `last_lock_change`.
+- Normal tuned frontends report `state=locked`; `signal_degraded`, `lock_loss`, and `slow_lock` provide deterministic RF-like status variants for client UI and retry tests.
 - `TEARDOWN` releases the session and frees a tuner once no sessions remain on its mux.
 - Lab state and active RTP senders are kept in memory and reset on process restart or `POST /api/reset`.
 - `POST /api/scenario` changes the runtime lab scenario; unknown names return `400` and leave the scenario unchanged.
-- `POST /api/scenario` accepts optional `service_id` and `mux_id` fields for tune-aware RTSP/RTP scenarios and `epg_gap`. HTTP-only, XMLTV-wide, and pre-tune effects remain global.
+- `POST /api/scenario` accepts optional `service_id` and `mux_id` fields for tune-aware RTSP/RTP scenarios, RF frontend telemetry scenarios, and `epg_gap`. HTTP-only, XMLTV-wide, and pre-tune effects remain global.
 
 ## Not simulated
 
 - TCP interleaved RTSP
 - RECORD
-- Tuner signal strength, BER, SNR
+- Real RF signal strength, BER, SNR, or frontend hardware measurement
 - Real DVB scanning or RF signal acquisition
 - Real broadcast EPG feeds or full DVB EIT schedule generation
 - SAT>IP HTML UI beyond minimal status page
@@ -187,6 +192,7 @@ Designed for SAT>IP client tests such as:
 - DVB EIT present/following parser fallback against generated synthetic TS
 - RTSP session setup and teardown
 - Tuner pool exhaustion and same-mux sharing (via lab + RTSP)
+- Frontend telemetry UI and retry handling through deterministic `/api/tuners` state
 - RTP MPEG-TS playback (distinct synthetic TS per service, one decodable ZDF HD sample profile, or one file via `SATIP_LAB_TS_PATH`)
 - Lab observability (`GET /api/status`, `/api/tuners`, `/api/events`)
 

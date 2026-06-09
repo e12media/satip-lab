@@ -94,6 +94,92 @@ func TestManagerReleasesTunerOnTeardown(t *testing.T) {
 	}
 }
 
+func TestManagerReportsLockedFrontendTelemetryAfterSetup(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+
+	if _, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+
+	frontend := manager.Status().Tuners[0].Frontend
+	if frontend.State != lab.FrontendLocked {
+		t.Fatalf("frontend state: got %q", frontend.State)
+	}
+	if frontend.SignalStrength != 88 || frontend.SNRDB != 13.5 || frontend.BER != 0 || frontend.PER != 0 {
+		t.Fatalf("locked telemetry: %+v", frontend)
+	}
+	if frontend.LockMS != 250 || frontend.LastLockChange == nil || frontend.LastLockChange.IsZero() {
+		t.Fatalf("lock timing: %+v", frontend)
+	}
+}
+
+func TestManagerResetsFrontendTelemetryWhenTunerIsReleased(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	if _, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+
+	manager.Teardown("sess-1")
+
+	frontend := manager.Status().Tuners[0].Frontend
+	if frontend.State != lab.FrontendIdle || frontend.SignalStrength != 0 || frontend.LockMS != 0 || frontend.LastLockChange != nil {
+		t.Fatalf("released frontend telemetry: %+v", frontend)
+	}
+}
+
+func TestSignalScenariosExposeDeterministicFrontendTelemetry(t *testing.T) {
+	for _, tc := range []struct {
+		scenario string
+		state    string
+		signal   int
+		snr      float64
+		ber      float64
+		per      float64
+		lockMS   int
+	}{
+		{scenario: lab.ScenarioSignalDegraded, state: lab.FrontendDegraded, signal: 42, snr: 6.5, ber: 0.00025, per: 0.02, lockMS: 250},
+		{scenario: lab.ScenarioLockLoss, state: lab.FrontendLost, signal: 0, snr: 0, ber: 1, per: 1, lockMS: 250},
+		{scenario: lab.ScenarioSlowLock, state: lab.FrontendTuning, signal: 55, snr: 8, ber: 0.0001, per: 0.01, lockMS: 1200},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			manager := lab.NewManager(lab.DefaultCatalog(), 1)
+			if err := manager.SetScenario(tc.scenario); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1"); err != nil {
+				t.Fatal(err)
+			}
+
+			frontend := manager.Status().Tuners[0].Frontend
+			if frontend.State != tc.state || frontend.SignalStrength != tc.signal || frontend.SNRDB != tc.snr || frontend.BER != tc.ber || frontend.PER != tc.per || frontend.LockMS != tc.lockMS {
+				t.Fatalf("frontend telemetry for %s: got %+v", tc.scenario, frontend)
+			}
+		})
+	}
+}
+
+func TestTargetedSignalScenarioOnlyChangesMatchingMuxTelemetry(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 2)
+	if err := manager.SetScenarioTarget(lab.ScenarioSignalDegraded, "", "src1-11362h-22000-dvbs2"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Setup("sess-2", "src=1&freq=11362&pol=h&msys=dvbs2&sr=22000&pids=0,17,6100,6110,6120", "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+
+	status := manager.Status()
+	if status.Tuners[0].Frontend.State != lab.FrontendLocked {
+		t.Fatalf("non-targeted tuner should remain locked: %+v", status.Tuners[0])
+	}
+	if status.Tuners[1].Frontend.State != lab.FrontendDegraded {
+		t.Fatalf("targeted tuner should be degraded: %+v", status.Tuners[1])
+	}
+}
+
 func TestManagerTracksRequestedPIDs(t *testing.T) {
 	manager := lab.NewManager(lab.DefaultCatalog(), 1)
 	if _, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1"); err != nil {
@@ -210,6 +296,9 @@ func TestManagerAcceptsVariantScenarioNames(t *testing.T) {
 		lab.ScenarioEPGGap,
 		lab.ScenarioEPGMismatch,
 		lab.ScenarioEPGStale,
+		lab.ScenarioSignalDegraded,
+		lab.ScenarioLockLoss,
+		lab.ScenarioSlowLock,
 	} {
 		if err := manager.SetScenario(name); err != nil {
 			t.Fatalf("SetScenario(%q): %v", name, err)

@@ -98,6 +98,14 @@ Deferred from v0.2:
 - [x] Public compatibility corpus under `docs/compatibility/` with confidence levels and YAML profile records.
 - [x] `SATIP_LAB_VENDOR_PROFILE` remains as an RTSP profile selector alias.
 
+## v1.7 RF/Tuner Telemetry V1
+
+- [x] `/api/tuners` and `/api/status` expose deterministic frontend telemetry for each tuner.
+- [x] Normal tuned frontends report locked state, synthetic signal strength, SNR, BER/PER, lock timing, and last lock transition.
+- [x] `signal_degraded`, `lock_loss`, and `slow_lock` scenarios provide deterministic RF-like status variants.
+- [x] RF telemetry scenarios support `service_id` and `mux_id` targeting.
+- [x] RTSP setup/play behavior remains unchanged for telemetry-only scenarios.
+
 ## Next High-Value Slices
 
 - Promote metadata-only profiles to trace-backed non-spec behavior after sanitized traces or pcaps are documented.
