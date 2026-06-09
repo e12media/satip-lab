@@ -1,6 +1,6 @@
 # API Schema
 
-Schema version: **1.8**
+Schema version: **1.9**
 
 This is the stable v1 lab API contract for `satip-lab`. The same custom schema document is available at runtime as JSON from `GET /api/schema`; it is not a JSON Schema or OpenAPI document.
 

@@ -76,9 +76,10 @@ deterministic multi-device fixtures. In CI, prefer explicit endpoints from
 not available.
 
 When `features.playback_observability` is true, active `/api/sessions` entries
-include RTSP setup/play acceptance timestamps, RTP first/last sent timestamps,
-packet and byte counters, transport, and destination. Use these fields to compare
-server-side first RTP send time with client-observed first RTP receive time.
+include RTP packet and byte counters, and add RTSP setup/play timestamps,
+RTP first/last sent timestamps, transport, and destination as those lifecycle
+events occur. Use these fields to compare server-side first RTP send time with
+client-observed first RTP receive time.
 
 ## Catalog-Aware Tests
 

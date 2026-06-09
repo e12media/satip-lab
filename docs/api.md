@@ -271,9 +271,9 @@ retry tests rather than real RF measurement.
 
 ## `GET /api/sessions`
 
-Returns active RTSP lab sessions. Session objects include setup/play acceptance
-timestamps plus RTP transport, destination, first/last sent timestamps, packet
-count, and byte count when playback has started.
+Returns active RTSP lab sessions. Session objects include RTP packet and byte
+counters, and add timing/transport fields as their corresponding lifecycle
+events occur: RTSP `SETUP`, RTSP `PLAY`, and successful RTP sends.
 
 ## `GET /api/events`
 
