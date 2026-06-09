@@ -40,7 +40,7 @@ The response includes:
 - Self-contained EPG evidence URLs, including `urls.xmltv` and `urls.clock`.
 - Ready-to-use client test environment variables.
 - Catalog source, catalog size, bundled fixture path, and a sample RTSP tune URL.
-- Feature flags for custom catalogs, compatibility evidence tooling, compatibility profiles, XMLTV, EIT present/following, frontend lifecycle, frontend telemetry, hardware-style status, RTSP interleaved TCP, RTSP/RTP smoke, and runtime scenarios.
+- Feature flags for custom catalogs, compatibility evidence tooling, compatibility profiles, DVB SI basics, XMLTV, EIT present/following, frontend lifecycle, frontend telemetry, hardware-style status, RTSP interleaved TCP, RTSP/RTP smoke, and runtime scenarios.
 - Runtime profile name from `runtime.profile`.
 - Compatibility profile names and corpus path from `compatibility`.
 - Runtime scenario names and whether they can be scoped by `service_id` or `mux_id`.
@@ -68,7 +68,7 @@ curl -fsS "$SATIP_TEST_HTTP_URL/epg/xmltv.xml" | grep -q "zdf.de"
 After basic HTTP checks, run the client project's own RTSP/RTP integration tests against `SATIP_TEST_RTSP_URL`.
 Clients that support TCP fallback can request `RTP/AVP/TCP;unicast;interleaved=0-1`
 in SETUP and assert `$`-framed RTP payload type 33 on the RTSP TCP connection.
-For guide clients that parse in-stream DVB data, include a test for synthetic EIT present/following on PID `0x0012` when using generated TS.
+For guide clients that parse in-stream DVB data, include tests for synthetic EIT present/following on PID `0x0012`, SDT actual on PID `0x0011`, and NIT actual on PID `0x0010` when using generated TS.
 
 ## Catalog-Aware Tests
 

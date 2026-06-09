@@ -39,6 +39,10 @@ func SyntheticServiceTransportWithOptions(profile ServiceProfile, eit EITOptions
 			packets = append(packets, syntheticPacket(0x12, true, byte(i%16), psiPayload(section)))
 		}
 	}
+	packets = append(packets,
+		syntheticPacket(0x11, true, 0, psiPayload(sdtSection(profile, !eit.Suppress))),
+		syntheticPacket(0x10, true, 0, psiPayload(nitSection())),
+	)
 
 	for i := 0; i < 300; i++ {
 		videoMarker := pesPayload(0xE0, []byte(fmt.Sprintf("satip-lab:%s:%s:video:%06d", profile.ID, profile.Name, i)))
@@ -185,6 +189,85 @@ func pmtSection(profile ServiceProfile) []byte {
 		0x03, 0xE0 | byte(profile.AudioPID>>8), byte(profile.AudioPID), 0xF0, 0x00,
 	}
 	return appendCRC(section)
+}
+
+func sdtSection(profile ServiceProfile, eitPresentFollowing bool) []byte {
+	descriptor := serviceDescriptor("satip-lab", profile.Name)
+	loopLength := len(descriptor)
+	eitFlags := byte(0xFC)
+	if eitPresentFollowing {
+		eitFlags |= 0x02
+	}
+	section := []byte{
+		0x42,
+		0xF0, 0x00,
+		0x00, 0x01,
+		0xC1,
+		0x00,
+		0x00,
+		0x00, 0x01,
+		0xFF,
+		byte(profile.ServiceID >> 8), byte(profile.ServiceID),
+		eitFlags,
+		0x80 | byte((loopLength>>8)&0x0F),
+		byte(loopLength),
+	}
+	section = append(section, descriptor...)
+	sectionLength := len(section) - 3 + 4
+	section[1] = 0xF0 | byte((sectionLength>>8)&0x0F)
+	section[2] = byte(sectionLength)
+	return appendCRC(section)
+}
+
+func nitSection() []byte {
+	networkDescriptor := networkNameDescriptor("satip-lab DVB-S2")
+	networkLoopLength := len(networkDescriptor)
+	section := []byte{
+		0x40,
+		0xF0, 0x00,
+		0x00, 0x01,
+		0xC1,
+		0x00,
+		0x00,
+		0xF0 | byte((networkLoopLength>>8)&0x0F),
+		byte(networkLoopLength),
+	}
+	section = append(section, networkDescriptor...)
+	section = append(section,
+		0xF0, 0x06,
+		0x00, 0x01,
+		0x00, 0x01,
+		0xF0, 0x00,
+	)
+	sectionLength := len(section) - 3 + 4
+	section[1] = 0xF0 | byte((sectionLength>>8)&0x0F)
+	section[2] = byte(sectionLength)
+	return appendCRC(section)
+}
+
+func serviceDescriptor(provider, service string) []byte {
+	providerBytes := cappedDescriptorString(provider, 32)
+	serviceBytes := cappedDescriptorString(service, 64)
+	descriptor := []byte{0x48, 0x00, 0x19, byte(len(providerBytes))}
+	descriptor = append(descriptor, providerBytes...)
+	descriptor = append(descriptor, byte(len(serviceBytes)))
+	descriptor = append(descriptor, serviceBytes...)
+	descriptor[1] = byte(len(descriptor) - 2)
+	return descriptor
+}
+
+func networkNameDescriptor(name string) []byte {
+	nameBytes := cappedDescriptorString(name, 64)
+	descriptor := []byte{0x40, byte(len(nameBytes))}
+	return append(descriptor, nameBytes...)
+}
+
+func cappedDescriptorString(value string, max int) []byte {
+	out := []byte(value)
+	if len(out) > max {
+		return out[:max]
+	}
+	return out
 }
 
 func eitSection(profile ServiceProfile, sectionNumber, lastSectionNumber, runningStatus int, start time.Time, duration time.Duration) []byte {

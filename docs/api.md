@@ -38,6 +38,7 @@ Returns a coding-agent bootstrap document with advertised URLs, test environment
     "custom_catalogs": true,
     "compatibility_evidence": true,
     "compatibility_profiles": true,
+    "dvb_si_basics": true,
     "xmltv_epg": true,
     "eit_present_following": true,
     "frontend_lifecycle": true,
