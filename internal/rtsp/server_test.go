@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
 	"regexp"
 	"strconv"
@@ -58,6 +59,14 @@ func TestParseTransportAcceptsInterleavedTCP(t *testing.T) {
 	}
 	if transport.rtpChannel != 2 || transport.rtcpChannel != 3 {
 		t.Fatalf("interleaved channels: got %d-%d", transport.rtpChannel, transport.rtcpChannel)
+	}
+}
+
+func TestParseTransportRejectsInterleavedChannelOutsideByteRange(t *testing.T) {
+	transport := parseTransport("RTP/AVP/TCP;unicast;interleaved=256-257")
+
+	if !transport.invalid {
+		t.Fatalf("expected invalid transport for channels %d-%d", transport.rtpChannel, transport.rtcpChannel)
 	}
 }
 
@@ -269,6 +278,23 @@ func TestInterleavedSetupReturnsTCPTransport(t *testing.T) {
 	}
 }
 
+func TestInterleavedSetupRejectsChannelOutsideByteRange(t *testing.T) {
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, lab.NewManager(lab.DefaultCatalog(), 1))
+	conn := &fakeTCPConn{remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 55000}}
+
+	resp := server.handleSetupWithState(conn, request{
+		method: "SETUP",
+		uri:    "rtsp://127.0.0.1/?src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102",
+		headers: map[string]string{
+			"transport": "RTP/AVP/TCP;unicast;interleaved=256-257",
+		},
+	}, "1", newConnectionState())
+
+	if !strings.Contains(resp, "461 Unsupported Transport") {
+		t.Fatalf("expected invalid interleaved transport rejection: %s", resp)
+	}
+}
+
 func TestInterleavedPlayWritesRTPFramesOverRTSPConnection(t *testing.T) {
 	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, lab.NewManager(lab.DefaultCatalog(), 1))
 	conn := &fakeTCPConn{remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 55000}}
@@ -293,6 +319,74 @@ func TestInterleavedPlayWritesRTPFramesOverRTSPConnection(t *testing.T) {
 	if rtp[12] != 0x47 {
 		t.Fatalf("MPEG-TS sync byte: got 0x%02x", rtp[12])
 	}
+}
+
+func TestInterleavedPlayResponsePrecedesFramesOnRTSPConnection(t *testing.T) {
+	server := startRTSPTestServer(t, lab.NewManager(lab.DefaultCatalog(), 1))
+	conn, err := net.Dial("tcp", server.listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+
+	_, _ = fmt.Fprintf(conn, "SETUP rtsp://127.0.0.1/?src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102 RTSP/1.0\r\nCSeq: 1\r\nTransport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n\r\n")
+	setup := readRTSPResponse(t, reader)
+	match := regexp.MustCompile(`Session: ([^;\r\n]+)`).FindStringSubmatch(setup)
+	if len(match) < 2 {
+		t.Fatalf("missing session id: %s", setup)
+	}
+
+	_, _ = fmt.Fprintf(conn, "PLAY rtsp://127.0.0.1/ RTSP/1.0\r\nCSeq: 2\r\nSession: %s\r\n\r\n", match[1])
+	_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	first, err := reader.ReadByte()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != 'R' {
+		t.Fatalf("PLAY response must precede interleaved frames, first byte 0x%02x", first)
+	}
+	if err := reader.UnreadByte(); err != nil {
+		t.Fatal(err)
+	}
+	play := readRTSPResponse(t, reader)
+	if !strings.Contains(play, "RTSP/1.0 200 OK") {
+		t.Fatalf("PLAY failed: %s", play)
+	}
+	next, err := reader.ReadByte()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next != '$' {
+		t.Fatalf("expected interleaved frame after PLAY response, got 0x%02x", next)
+	}
+}
+
+func TestRTSPConnectionCloseReleasesInterleavedSession(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	server := startRTSPTestServer(t, manager)
+	conn, err := net.Dial("tcp", server.listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(conn)
+
+	_, _ = fmt.Fprintf(conn, "SETUP rtsp://127.0.0.1/?src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102 RTSP/1.0\r\nCSeq: 1\r\nTransport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n\r\n")
+	setup := readRTSPResponse(t, reader)
+	if !strings.Contains(setup, "200 OK") {
+		t.Fatalf("SETUP failed: %s", setup)
+	}
+	_ = conn.Close()
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		status := manager.Status()
+		if len(status.Sessions) == 0 && status.Tuners[0].State == "idle" {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("connection close should release interleaved session: %+v", manager.Status())
 }
 
 func TestPauseStopsInterleavedStreamingAndKeepsSession(t *testing.T) {
@@ -345,7 +439,8 @@ func TestExpiredInterleavedSessionStopsStreamingAndReleasesTuner(t *testing.T) {
 }
 
 func TestInterleavedStreamingStopsOnTCPWriteError(t *testing.T) {
-	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, lab.NewManager(lab.DefaultCatalog(), 1))
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, manager)
 	conn := &fakeTCPConn{remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 55000}, writeErr: errors.New("closed")}
 	sessionID := setupInterleavedTestSession(t, server, conn)
 
@@ -356,16 +451,16 @@ func TestInterleavedStreamingStopsOnTCPWriteError(t *testing.T) {
 
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
-		sess, ok := server.sessionByID(sessionID)
-		if !ok {
-			t.Fatal("write error should stop streaming, not delete RTSP session")
-		}
-		if !sess.streamingActive() {
-			return
+		if _, ok := server.sessionByID(sessionID); !ok {
+			status := manager.Status()
+			if len(status.Sessions) == 0 && status.Tuners[0].State == "idle" {
+				return
+			}
+			t.Fatalf("RTSP session deleted without releasing lab state: %+v", status)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatal("interleaved stream stayed active after TCP write error")
+	t.Fatal("interleaved session stayed allocated after TCP write error")
 }
 
 func TestSlowRTSPScenarioDelaysResponses(t *testing.T) {
@@ -408,6 +503,21 @@ func TestReadRequestConsumesBody(t *testing.T) {
 	}
 	if second.method != "OPTIONS" {
 		t.Fatalf("second method after body consume: got %q", second.method)
+	}
+}
+
+func TestReadRequestSkipsInboundInterleavedFrames(t *testing.T) {
+	reader := bufio.NewReader(bytes.NewReader(append(
+		[]byte{'$', 0, 0, 4, 0xde, 0xad, 0xbe, 0xef},
+		[]byte("OPTIONS rtsp://127.0.0.1/ RTSP/1.0\r\nCSeq: 3\r\n\r\n")...,
+	)))
+
+	req, err := readRequest(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.method != "OPTIONS" || req.headers["cseq"] != "3" {
+		t.Fatalf("request after interleaved frame: %+v", req)
 	}
 }
 
@@ -1033,6 +1143,38 @@ func waitForInterleavedFrame(t *testing.T, conn *fakeTCPConn, timeout time.Durat
 	}
 	t.Fatalf("timed out waiting for interleaved frame; writes=%#v", conn.writtenBytes())
 	return nil
+}
+
+func startRTSPTestServer(t *testing.T, manager *lab.Manager) *Server {
+	t.Helper()
+	server := NewServer(config.Config{
+		BindAddress: "127.0.0.1",
+		PublicHost:  "127.0.0.1",
+		RTSPPort:    0,
+	}, &ts.Source{}, manager)
+	if err := server.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = server.Stop()
+	})
+	return server
+}
+
+func readRTSPResponse(t *testing.T, reader *bufio.Reader) string {
+	t.Helper()
+	var response strings.Builder
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.WriteString(line)
+		if line == "\r\n" {
+			break
+		}
+	}
+	return response.String()
 }
 
 func sameInts(got, want []int) bool {
