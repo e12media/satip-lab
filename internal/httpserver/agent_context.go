@@ -117,6 +117,7 @@ func buildAgentContext(cfg config.Config, manager *lab.Manager) AgentContext {
 		},
 		Features: map[string]bool{
 			"custom_catalogs":        true,
+			"compatibility_evidence": true,
 			"compatibility_profiles": true,
 			"xmltv_epg":              true,
 			"eit_present_following":  true,

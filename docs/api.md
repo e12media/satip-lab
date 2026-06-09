@@ -36,6 +36,7 @@ Returns a coding-agent bootstrap document with advertised URLs, test environment
   },
   "features": {
     "custom_catalogs": true,
+    "compatibility_evidence": true,
     "compatibility_profiles": true,
     "xmltv_epg": true,
     "eit_present_following": true,

@@ -66,6 +66,32 @@ Each entry should include:
 When evidence upgrades a profile to `captured-trace` or `owned-hardware`, update
 the matching runtime profile and tests in the same PR.
 
+Use `satip-lab-compat-evidence` for sanitized trace summaries before adding a
+profile `behavior:` section:
+
+```bash
+go run ./cmd/satip-lab-compat-evidence \
+  --input docs/compatibility/evidence/example-trace.json
+
+go run ./cmd/satip-lab-compat-evidence \
+  --input docs/compatibility/evidence/example-trace.json \
+  --behavior-yaml
+```
+
+The evidence JSON separates `observed` wire facts from
+`simulator.implemented_behavior`. A reviewed `behavior:` YAML block documents
+trace-backed observations; it does not make the simulator load YAML-defined
+runtime quirks.
+
+If a profile already includes behavior evidence, check it against the sanitized
+summary:
+
+```bash
+go run ./cmd/satip-lab-compat-evidence \
+  --input docs/compatibility/evidence/example-trace.json \
+  --profile-yaml docs/compatibility/profiles/example.yaml
+```
+
 ## Smoke Evidence JSON
 
 `satip-lab-smoke` can emit a machine-readable RTSP/RTP evidence record for

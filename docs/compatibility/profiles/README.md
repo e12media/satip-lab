@@ -89,3 +89,33 @@ go run ./cmd/satip-lab-smoke --json --profile tvheadend
 
 Attach the JSON output, a sanitized RTSP transcript, or a small pcap-derived
 excerpt when proposing a profile confidence upgrade.
+
+## Capture-backed ingestion workflow
+
+Use `satip-lab-compat-evidence` for sanitized trace summaries before promoting a
+metadata-only profile to behavior-backed evidence:
+
+```bash
+go run ./cmd/satip-lab-compat-evidence \
+  --input docs/compatibility/evidence/example-trace.json
+
+go run ./cmd/satip-lab-compat-evidence \
+  --input docs/compatibility/evidence/example-trace.json \
+  --behavior-yaml
+```
+
+The trace summary separates `observed` facts from `simulator.implemented_behavior`.
+Observed fields can generate a reviewed `behavior:` YAML block, but the simulator
+does not load YAML-defined behavior at runtime in this slice.
+
+When a profile already includes behavior evidence, check it against the sanitized
+summary:
+
+```bash
+go run ./cmd/satip-lab-compat-evidence \
+  --input docs/compatibility/evidence/example-trace.json \
+  --profile-yaml docs/compatibility/profiles/example.yaml
+```
+
+The tool rejects missing evidence metadata with field-specific errors and rejects
+non-spec behavior unless `confidence` is `captured-trace` or `owned-hardware`.

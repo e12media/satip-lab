@@ -1,0 +1,23 @@
+{
+  "profile": "traced-example",
+  "confidence": "captured-trace",
+  "source": {
+    "label": "Sanitized trace",
+    "url": "traces/traced-example.json"
+  },
+  "observed": {
+    "rtsp_methods": ["OPTIONS", "DESCRIBE", "SETUP", "PLAY", "TEARDOWN"],
+    "session_header": "session",
+    "transport_header": "Transport",
+    "session_id_format": "numeric",
+    "setup_includes_timeout": false,
+    "requires_describe_before_setup": true,
+    "tuner_busy_status": "453 Not Enough Bandwidth",
+    "no_signal_status": "503 Service Unavailable",
+    "timing_notes": "SETUP response observed after 120 ms in sanitized trace summary."
+  },
+  "simulator": {
+    "implemented_behavior": [],
+    "notes": "Observed behavior only; no runtime promotion in this evidence fixture."
+  }
+}

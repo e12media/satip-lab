@@ -19,6 +19,7 @@ COPY --from=ts-asset /build/assets/ assets/
 ARG TARGETOS
 ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/satip-lab ./cmd/satip-lab \
+  && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/satip-lab-compat-evidence ./cmd/satip-lab-compat-evidence \
   && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/satip-lab-mcp ./cmd/satip-lab-mcp \
   && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/satip-lab-smoke ./cmd/satip-lab-smoke \
   && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/satip-labctl ./cmd/satip-labctl
@@ -31,6 +32,7 @@ LABEL org.opencontainers.image.title="SAT>IP Lab Server" \
 WORKDIR /app
 COPY --from=ts-asset /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build /out/satip-lab /app/satip-lab
+COPY --from=build /out/satip-lab-compat-evidence /app/satip-lab-compat-evidence
 COPY --from=build /out/satip-lab-mcp /app/satip-lab-mcp
 COPY --from=build /out/satip-lab-smoke /app/satip-lab-smoke
 COPY --from=build /out/satip-labctl /app/satip-labctl
