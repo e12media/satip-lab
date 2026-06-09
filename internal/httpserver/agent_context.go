@@ -121,6 +121,7 @@ func buildAgentContext(cfg config.Config, manager *lab.Manager) AgentContext {
 			"xmltv_epg":              true,
 			"eit_present_following":  true,
 			"frontend_telemetry":     true,
+			"rtsp_interleaved_tcp":   true,
 			"rtsp_rtp_smoke":         true,
 			"runtime_scenarios":      true,
 			"scenario_timelines":     true,

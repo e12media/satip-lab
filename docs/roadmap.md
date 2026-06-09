@@ -123,6 +123,13 @@ Deferred from v0.2:
 - [x] Timeline steps reuse existing scenario validation, targeting, and duration rules.
 - [x] Posting a normal scenario object clears an active timeline.
 
+## v1.10 TCP Interleaved RTSP/RTP
+
+- [x] `SETUP` accepts `RTP/AVP/TCP;interleaved=<rtp>-<rtcp>` transport requests.
+- [x] `PLAY` sends RTP payload type 33 inside RTSP `$` interleaved frames on the TCP connection.
+- [x] `PAUSE`, `TEARDOWN`, and session timeout stop interleaved streaming without closing the RTSP session unexpectedly.
+- [x] UDP RTP behavior remains unchanged.
+
 ## Digital Twin Roadmap
 
 Use a spine-first implementation order: land the current foundations, add
@@ -132,7 +139,7 @@ trace or owned-hardware evidence exists.
 
 | Priority | Work item | GitHub tracking | Implementation notes |
 |----------|-----------|-----------------|----------------------|
-| P0 | Land current foundation PRs | Issues #4, #5, #6; PRs #3, #13, #14, #15 | Merge in dependency-safe order after maintainer review: behavioral evidence, RF telemetry, scenario timelines, then TCP interleaved RTSP/RTP. Reconcile schema/version docs after merges. |
+| P0 | Land current foundation PRs | Issues #4, #5, #6; PRs #3, #13, #19, #15 | Merge in dependency-safe order after maintainer review: behavioral evidence, RF telemetry, scenario timelines, then TCP interleaved RTSP/RTP. Reconcile schema/version docs after merges. |
 | P1 | Hardware-style management/status surface | #11 | Add lab-only hardware-style uptime, firmware/profile metadata, active streams, frontend state, and network counters while keeping `/api/status` backward compatible. |
 | P2 | Frontend/tuner lifecycle V2 | #16 | Model deterministic frontend states such as idle, tuning, locked, degraded, lost, and recovering using RF telemetry and scenario timeline hooks. |
 | P3 | Hardware fault scenarios V1 | #17 | Add explicit deterministic faults such as cold boot delay, wedged tuner until reset, RTP dies while RTSP remains alive, delayed first PAT/PMT, and missing-signal recovery. |

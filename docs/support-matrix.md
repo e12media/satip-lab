@@ -42,7 +42,7 @@ Status legend:
 | PAUSE | May stop streaming while keeping a session. | Stops RTP while keeping the simulated RTSP session and tuner allocation. | Supported | Test pause/resume client state machines. |
 | GET_PARAMETER keepalive | Commonly used to keep sessions alive. | Validates the session and refreshes timeout activity. | Supported | Test keepalive scheduling and recovery from idle timeout. |
 | TEARDOWN | Releases stream resources. | Stops RTP and releases the lab session/tuner when appropriate. | Supported | Test cleanup and subsequent tuner reuse. |
-| TCP interleaved RTSP/RTP | Supported by some servers and clients. | Not implemented. | Not simulated | Keep TCP interleaved coverage on the post-v1 roadmap or hardware/full-server suite. |
+| TCP interleaved RTSP/RTP | Supported by some servers and clients, often as a firewall/NAT fallback. | Accepts `RTP/AVP/TCP;interleaved=<rtp>-<rtcp>` SETUP and sends `$`-framed RTP payload type 33 over the RTSP TCP connection. | Supported | Test client TCP fallback, frame-boundary parsing, and cleanup on PAUSE/TEARDOWN. |
 | RECORD | Not part of the current lab target. | Not implemented. | Not simulated | Use other tools for recording workflows. |
 | Authentication and HTTPS | Vendor/server dependent. | Not implemented. | Not simulated | Test auth and TLS against separate fixtures. |
 
@@ -86,4 +86,4 @@ Use these tiers when deciding where a client test belongs:
 | RTSP state-machine tests | Yes | Session setup, play, pause, keepalive, teardown, timeout, PID updates. |
 | Resource and error-path tests | Yes | Tuner exhaustion, no signal, bad playlists, packet impairments, reset. |
 | Decoder/player quality tests | Sometimes | Use the ZDF HD H.264/AAC sample profile for CI smoke tests, or a custom TS fixture through `SATIP_LAB_TS_PATH` when you need exact media. |
-| RF, scanning, vendor, auth, TLS, and interleaved TCP tests | No | Validate with real hardware, minisatip, TVHeadend, or specialized fixtures. |
+| RF, scanning, vendor, auth, and TLS tests | No | Validate with real hardware, minisatip, TVHeadend, or specialized fixtures. |

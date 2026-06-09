@@ -3,11 +3,14 @@ package rtsp
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -45,6 +48,25 @@ func TestParseTransportFallsBackToRemoteAddress(t *testing.T) {
 
 	if got := transport.destination(remote); !got.Equal(remote) {
 		t.Fatalf("destination fallback: got %v", got)
+	}
+}
+
+func TestParseTransportAcceptsInterleavedTCP(t *testing.T) {
+	transport := parseTransport("RTP/AVP/TCP;unicast;interleaved=2-3")
+
+	if transport.mode != transportInterleaved {
+		t.Fatalf("transport mode: got %q", transport.mode)
+	}
+	if transport.rtpChannel != 2 || transport.rtcpChannel != 3 {
+		t.Fatalf("interleaved channels: got %d-%d", transport.rtpChannel, transport.rtcpChannel)
+	}
+}
+
+func TestParseTransportRejectsInterleavedChannelOutsideByteRange(t *testing.T) {
+	transport := parseTransport("RTP/AVP/TCP;unicast;interleaved=256-257")
+
+	if !transport.invalid {
+		t.Fatalf("expected invalid transport for channels %d-%d", transport.rtpChannel, transport.rtcpChannel)
 	}
 }
 
@@ -233,6 +255,214 @@ func TestSetupReturns503WhenNoSignalScenarioIsActive(t *testing.T) {
 	}
 }
 
+func TestInterleavedSetupReturnsTCPTransport(t *testing.T) {
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, lab.NewManager(lab.DefaultCatalog(), 1))
+	conn := &fakeTCPConn{remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 55000}}
+
+	resp := server.handleSetupWithState(conn, request{
+		method: "SETUP",
+		uri:    "rtsp://127.0.0.1/?src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102",
+		headers: map[string]string{
+			"transport": "RTP/AVP/TCP;unicast;interleaved=0-1",
+		},
+	}, "1", &connectionState{})
+
+	if !strings.Contains(resp, "RTSP/1.0 200 OK") {
+		t.Fatalf("SETUP failed: %s", resp)
+	}
+	if !strings.Contains(resp, "Transport: RTP/AVP/TCP;unicast;interleaved=0-1;source=127.0.0.1") {
+		t.Fatalf("missing interleaved transport header: %s", resp)
+	}
+	if strings.Contains(resp, "client_port=") || strings.Contains(resp, "server_port=") {
+		t.Fatalf("interleaved SETUP should not advertise UDP ports: %s", resp)
+	}
+}
+
+func TestInterleavedSetupRejectsChannelOutsideByteRange(t *testing.T) {
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, lab.NewManager(lab.DefaultCatalog(), 1))
+	conn := &fakeTCPConn{remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 55000}}
+
+	resp := server.handleSetupWithState(conn, request{
+		method: "SETUP",
+		uri:    "rtsp://127.0.0.1/?src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102",
+		headers: map[string]string{
+			"transport": "RTP/AVP/TCP;unicast;interleaved=256-257",
+		},
+	}, "1", newConnectionState())
+
+	if !strings.Contains(resp, "461 Unsupported Transport") {
+		t.Fatalf("expected invalid interleaved transport rejection: %s", resp)
+	}
+}
+
+func TestInterleavedPlayWritesRTPFramesOverRTSPConnection(t *testing.T) {
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, lab.NewManager(lab.DefaultCatalog(), 1))
+	conn := &fakeTCPConn{remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 55000}}
+	sessionID := setupInterleavedTestSession(t, server, conn)
+
+	play := server.handlePlay(request{headers: map[string]string{"session": sessionID}}, "2")
+	if !strings.Contains(play, "200 OK") {
+		t.Fatalf("PLAY failed: %s", play)
+	}
+	frame := waitForInterleavedFrame(t, conn, 500*time.Millisecond)
+	if frame[0] != '$' || frame[1] != 0 {
+		t.Fatalf("interleaved frame header: %#v", frame[:4])
+	}
+	rtpLength := int(binary.BigEndian.Uint16(frame[2:4]))
+	if rtpLength != len(frame)-4 {
+		t.Fatalf("interleaved frame length: header=%d actual=%d", rtpLength, len(frame)-4)
+	}
+	rtp := frame[4:]
+	if rtp[0] != 0x80 || rtp[1]&0x7F != payloadTypeMP2T {
+		t.Fatalf("RTP header: %#v", rtp[:12])
+	}
+	if rtp[12] != 0x47 {
+		t.Fatalf("MPEG-TS sync byte: got 0x%02x", rtp[12])
+	}
+}
+
+func TestInterleavedPlayResponsePrecedesFramesOnRTSPConnection(t *testing.T) {
+	server := startRTSPTestServer(t, lab.NewManager(lab.DefaultCatalog(), 1))
+	conn, err := net.Dial("tcp", server.listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+
+	_, _ = fmt.Fprintf(conn, "SETUP rtsp://127.0.0.1/?src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102 RTSP/1.0\r\nCSeq: 1\r\nTransport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n\r\n")
+	setup := readRTSPResponse(t, reader)
+	match := regexp.MustCompile(`Session: ([^;\r\n]+)`).FindStringSubmatch(setup)
+	if len(match) < 2 {
+		t.Fatalf("missing session id: %s", setup)
+	}
+
+	_, _ = fmt.Fprintf(conn, "PLAY rtsp://127.0.0.1/ RTSP/1.0\r\nCSeq: 2\r\nSession: %s\r\n\r\n", match[1])
+	_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	first, err := reader.ReadByte()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != 'R' {
+		t.Fatalf("PLAY response must precede interleaved frames, first byte 0x%02x", first)
+	}
+	if err := reader.UnreadByte(); err != nil {
+		t.Fatal(err)
+	}
+	play := readRTSPResponse(t, reader)
+	if !strings.Contains(play, "RTSP/1.0 200 OK") {
+		t.Fatalf("PLAY failed: %s", play)
+	}
+	next, err := reader.ReadByte()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next != '$' {
+		t.Fatalf("expected interleaved frame after PLAY response, got 0x%02x", next)
+	}
+}
+
+func TestRTSPConnectionCloseReleasesInterleavedSession(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	server := startRTSPTestServer(t, manager)
+	conn, err := net.Dial("tcp", server.listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(conn)
+
+	_, _ = fmt.Fprintf(conn, "SETUP rtsp://127.0.0.1/?src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102 RTSP/1.0\r\nCSeq: 1\r\nTransport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n\r\n")
+	setup := readRTSPResponse(t, reader)
+	if !strings.Contains(setup, "200 OK") {
+		t.Fatalf("SETUP failed: %s", setup)
+	}
+	_ = conn.Close()
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		status := manager.Status()
+		if len(status.Sessions) == 0 && status.Tuners[0].State == "idle" {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("connection close should release interleaved session: %+v", manager.Status())
+}
+
+func TestPauseStopsInterleavedStreamingAndKeepsSession(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, manager)
+	conn := &fakeTCPConn{remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 55000}}
+	sessionID := setupInterleavedTestSession(t, server, conn)
+
+	play := server.handlePlay(request{headers: map[string]string{"session": sessionID}}, "2")
+	if !strings.Contains(play, "200 OK") {
+		t.Fatalf("PLAY failed: %s", play)
+	}
+	_ = waitForInterleavedFrame(t, conn, 500*time.Millisecond)
+
+	pause := server.handleRequestWithState(conn, request{method: "PAUSE", headers: map[string]string{"cseq": "3", "session": sessionID}}, &connectionState{})
+	if !strings.Contains(pause, "200 OK") {
+		t.Fatalf("PAUSE failed: %s", pause)
+	}
+	sess, ok := server.sessionByID(sessionID)
+	if !ok {
+		t.Fatal("PAUSE should keep RTSP session")
+	}
+	if sess.streamingActive() {
+		t.Fatal("interleaved stream should stop after PAUSE")
+	}
+	if got := manager.Status().Sessions[0].State; got != "paused" {
+		t.Fatalf("session state after PAUSE: got %q", got)
+	}
+}
+
+func TestExpiredInterleavedSessionStopsStreamingAndReleasesTuner(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, manager)
+	conn := &fakeTCPConn{remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 55000}}
+	sessionID := setupInterleavedTestSession(t, server, conn)
+
+	play := server.handlePlay(request{headers: map[string]string{"session": sessionID}}, "2")
+	if !strings.Contains(play, "200 OK") {
+		t.Fatalf("PLAY failed: %s", play)
+	}
+	_ = waitForInterleavedFrame(t, conn, 500*time.Millisecond)
+	server.expireSessions(time.Now().Add(rtspSessionTimeout + time.Second))
+
+	if len(manager.Status().Sessions) != 0 || manager.Status().Tuners[0].State != "idle" {
+		t.Fatalf("expired session should release lab state: %+v", manager.Status())
+	}
+	if _, ok := server.sessionByID(sessionID); ok {
+		t.Fatal("expired interleaved session remained in RTSP session map")
+	}
+}
+
+func TestInterleavedStreamingStopsOnTCPWriteError(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, manager)
+	conn := &fakeTCPConn{remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 55000}, writeErr: errors.New("closed")}
+	sessionID := setupInterleavedTestSession(t, server, conn)
+
+	play := server.handlePlay(request{headers: map[string]string{"session": sessionID}}, "2")
+	if !strings.Contains(play, "200 OK") {
+		t.Fatalf("PLAY failed: %s", play)
+	}
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if _, ok := server.sessionByID(sessionID); !ok {
+			status := manager.Status()
+			if len(status.Sessions) == 0 && status.Tuners[0].State == "idle" {
+				return
+			}
+			t.Fatalf("RTSP session deleted without releasing lab state: %+v", status)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("interleaved session stayed allocated after TCP write error")
+}
+
 func TestSlowRTSPScenarioDelaysResponses(t *testing.T) {
 	manager := lab.NewManager(lab.DefaultCatalog(), 1)
 	if err := manager.SetScenario(lab.ScenarioSlowRTSP); err != nil {
@@ -273,6 +503,21 @@ func TestReadRequestConsumesBody(t *testing.T) {
 	}
 	if second.method != "OPTIONS" {
 		t.Fatalf("second method after body consume: got %q", second.method)
+	}
+}
+
+func TestReadRequestSkipsInboundInterleavedFrames(t *testing.T) {
+	reader := bufio.NewReader(bytes.NewReader(append(
+		[]byte{'$', 0, 0, 4, 0xde, 0xad, 0xbe, 0xef},
+		[]byte("OPTIONS rtsp://127.0.0.1/ RTSP/1.0\r\nCSeq: 3\r\n\r\n")...,
+	)))
+
+	req, err := readRequest(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.method != "OPTIONS" || req.headers["cseq"] != "3" {
+		t.Fatalf("request after interleaved frame: %+v", req)
 	}
 }
 
@@ -821,7 +1066,10 @@ func TestStreamBehaviorAppliesJitterEveryNthPacket(t *testing.T) {
 }
 
 type fakeTCPConn struct {
-	remote net.Addr
+	remote   net.Addr
+	mu       sync.Mutex
+	writes   bytes.Buffer
+	writeErr error
 }
 
 func setupTestSession(t *testing.T, server *Server) string {
@@ -852,6 +1100,83 @@ func setupTestSessionWithRTPPort(t *testing.T, server *Server, rtpPort int) stri
 	return match[1]
 }
 
+func setupInterleavedTestSession(t *testing.T, server *Server, conn *fakeTCPConn) string {
+	t.Helper()
+	setup := server.handleSetupWithState(
+		conn,
+		request{
+			method: "SETUP",
+			uri:    "rtsp://127.0.0.1/?src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102",
+			headers: map[string]string{
+				"transport": "RTP/AVP/TCP;unicast;interleaved=0-1",
+			},
+		},
+		"1",
+		&connectionState{},
+	)
+	if !strings.Contains(setup, "200 OK") {
+		t.Fatalf("SETUP failed: %s", setup)
+	}
+	match := regexp.MustCompile(`Session: (\d+)`).FindStringSubmatch(setup)
+	if len(match) < 2 {
+		t.Fatalf("missing session id: %s", setup)
+	}
+	return match[1]
+}
+
+func waitForInterleavedFrame(t *testing.T, conn *fakeTCPConn, timeout time.Duration) []byte {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		writes := conn.writtenBytes()
+		for offset := 0; offset+4 <= len(writes); offset++ {
+			if writes[offset] != '$' {
+				continue
+			}
+			length := int(binary.BigEndian.Uint16(writes[offset+2 : offset+4]))
+			end := offset + 4 + length
+			if end <= len(writes) {
+				return append([]byte(nil), writes[offset:end]...)
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for interleaved frame; writes=%#v", conn.writtenBytes())
+	return nil
+}
+
+func startRTSPTestServer(t *testing.T, manager *lab.Manager) *Server {
+	t.Helper()
+	server := NewServer(config.Config{
+		BindAddress: "127.0.0.1",
+		PublicHost:  "127.0.0.1",
+		RTSPPort:    0,
+	}, &ts.Source{}, manager)
+	if err := server.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = server.Stop()
+	})
+	return server
+}
+
+func readRTSPResponse(t *testing.T, reader *bufio.Reader) string {
+	t.Helper()
+	var response strings.Builder
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.WriteString(line)
+		if line == "\r\n" {
+			break
+		}
+	}
+	return response.String()
+}
+
 func sameInts(got, want []int) bool {
 	if len(got) != len(want) {
 		return false
@@ -864,11 +1189,24 @@ func sameInts(got, want []int) bool {
 	return true
 }
 
-func (f *fakeTCPConn) Read(_ []byte) (int, error)         { return 0, nil }
-func (f *fakeTCPConn) Write(b []byte) (int, error)        { return len(b), nil }
+func (f *fakeTCPConn) Read(_ []byte) (int, error) { return 0, nil }
+func (f *fakeTCPConn) Write(b []byte) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.writeErr != nil {
+		return 0, f.writeErr
+	}
+	return f.writes.Write(b)
+}
 func (f *fakeTCPConn) Close() error                       { return nil }
 func (f *fakeTCPConn) LocalAddr() net.Addr                { return &net.TCPAddr{} }
 func (f *fakeTCPConn) RemoteAddr() net.Addr               { return f.remote }
 func (f *fakeTCPConn) SetDeadline(_ time.Time) error      { return nil }
 func (f *fakeTCPConn) SetReadDeadline(_ time.Time) error  { return nil }
 func (f *fakeTCPConn) SetWriteDeadline(_ time.Time) error { return nil }
+
+func (f *fakeTCPConn) writtenBytes() []byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]byte(nil), f.writes.Bytes()...)
+}
