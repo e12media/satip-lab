@@ -439,7 +439,11 @@ func TestStartStreamingStopsAfterPacketLimit(t *testing.T) {
 	payload := make([]byte, 188)
 	payload[0] = 0x47
 
-	sess.startStreaming(payload, NewRTPSender(), streamBehavior{packetLimit: 2})
+	sess.startStreaming(func() []byte {
+		return payload
+	}, NewRTPSender(), func() streamBehavior {
+		return streamBehavior{packetLimit: 2}
+	})
 	defer sess.stopStreaming()
 
 	buf := make([]byte, 2048)
@@ -513,6 +517,100 @@ func TestPlayUsesRTPStopScenarioPacketLimit(t *testing.T) {
 	_ = rtpConn.SetReadDeadline(time.Now().Add(80 * time.Millisecond))
 	if _, _, err := rtpConn.ReadFromUDP(buf); err == nil {
 		t.Fatal("expected rtp_stop scenario to stop after burst")
+	}
+}
+
+func TestActiveStreamObservesTimelineRTPStopTransition(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	start := time.Now().UTC()
+	if err := manager.SetScenarioTimelineAt([]lab.ScenarioTimelineStep{
+		{AtMS: 0, Name: lab.ScenarioNormal},
+		{AtMS: 250, Name: lab.ScenarioRTPStop},
+	}, start); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, manager)
+	rtpConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rtpConn.Close()
+	rtpPort := rtpConn.LocalAddr().(*net.UDPAddr).Port
+
+	setup := server.handleSetup(
+		&fakeTCPConn{remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 55000}},
+		request{
+			method: "SETUP",
+			uri:    "rtsp://127.0.0.1/?src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102",
+			headers: map[string]string{
+				"transport": "RTP/AVP;unicast;destination=127.0.0.1;client_port=" + strconv.Itoa(rtpPort) + "-" + strconv.Itoa(rtpPort+1),
+			},
+		},
+		"1",
+	)
+	if !strings.Contains(setup, "200 OK") {
+		t.Fatalf("SETUP failed: %s", setup)
+	}
+	match := regexp.MustCompile(`Session: (\d+)`).FindStringSubmatch(setup)
+	if len(match) < 2 {
+		t.Fatalf("missing session id: %s", setup)
+	}
+	sessionID := match[1]
+
+	play := server.handlePlay(request{headers: map[string]string{"session": sessionID}}, "2")
+	if !strings.Contains(play, "200 OK") {
+		t.Fatalf("PLAY failed: %s", play)
+	}
+	defer server.handleTeardown(request{headers: map[string]string{"session": sessionID}}, "3")
+
+	buf := make([]byte, 2048)
+	received := 0
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		_ = rtpConn.SetReadDeadline(time.Now().Add(40 * time.Millisecond))
+		if _, _, err := rtpConn.ReadFromUDP(buf); err != nil {
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				break
+			}
+			t.Fatal(err)
+		}
+		received++
+	}
+	if received < 4 {
+		t.Fatalf("expected normal packets before timeline stop plus burst, got %d", received)
+	}
+	_ = rtpConn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	if _, _, err := rtpConn.ReadFromUDP(buf); err == nil {
+		t.Fatal("expected timeline rtp_stop step to stop active RTP stream")
+	}
+}
+
+func TestPlayPayloadProviderObservesScenarioChanges(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, manager)
+	service := lab.DefaultCatalog().Services[0]
+	mux := lab.DefaultCatalog().Muxes[0]
+	profile := ts.ServiceProfile{
+		ID:        service.ID,
+		Name:      service.Name,
+		ServiceID: service.ServiceID,
+		PMTPID:    service.PMTPID,
+		VideoPID:  service.VideoPID,
+		AudioPID:  service.AudioPID,
+	}
+
+	payloadProvider, err := server.playPayloadProvider(profile, service, mux)
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalPayload := append([]byte(nil), payloadProvider()...)
+	if err := manager.SetScenario(lab.ScenarioContinuityErrors); err != nil {
+		t.Fatal(err)
+	}
+	changedPayload := payloadProvider()
+	if bytes.Equal(normalPayload, changedPayload) {
+		t.Fatal("expected payload provider to observe continuity error scenario change")
 	}
 }
 

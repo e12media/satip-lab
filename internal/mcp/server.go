@@ -216,20 +216,33 @@ func tools() []toolDefinition {
 		{Name: "satip_services", Description: "Return the active SAT>IP service catalog.", InputSchema: objectSchema},
 		{Name: "satip_scenario", Description: "Return the active runtime scenario.", InputSchema: objectSchema},
 		{Name: "satip_reset", Description: "Reset sessions, tuners, RTP senders, and lab events.", InputSchema: objectSchema},
-		{Name: "satip_set_scenario", Description: "Set a runtime scenario; accepts name plus optional service_id, mux_id, and duration_min.", InputSchema: scenarioInputSchema()},
+		{Name: "satip_set_scenario", Description: "Set a runtime scenario; accepts name plus optional service_id, mux_id, duration_min, or a timeline array.", InputSchema: scenarioInputSchema()},
 		{Name: "satip_wait_ready", Description: "Poll /api/agent/context until the simulator is ready.", InputSchema: objectSchema},
 	}
 }
 
 func scenarioInputSchema() map[string]any {
 	return map[string]any{
-		"type":     "object",
-		"required": []string{"name"},
+		"type": "object",
 		"properties": map[string]any{
 			"name":         map[string]any{"type": "string"},
 			"service_id":   map[string]any{"type": "string"},
 			"mux_id":       map[string]any{"type": "string"},
 			"duration_min": map[string]any{"type": "integer"},
+			"timeline": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type":     "object",
+					"required": []string{"at_ms", "name"},
+					"properties": map[string]any{
+						"at_ms":        map[string]any{"type": "integer"},
+						"name":         map[string]any{"type": "string"},
+						"service_id":   map[string]any{"type": "string"},
+						"mux_id":       map[string]any{"type": "string"},
+						"duration_min": map[string]any{"type": "integer"},
+					},
+				},
+			},
 		},
 	}
 }

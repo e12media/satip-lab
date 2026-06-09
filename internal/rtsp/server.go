@@ -248,11 +248,13 @@ func (s *Server) handlePlay(req request, cseq string) string {
 		VideoPID:  setup.Service.VideoPID,
 		AudioPID:  setup.Service.AudioPID,
 	}
-	payload, err := s.playPayload(profile, setup.Service, setup.Mux)
+	payloadProvider, err := s.playPayloadProvider(profile, setup.Service, setup.Mux)
 	if err != nil {
 		return buildResponse(cseq, "500 Internal Server Error", nil)
 	}
-	sess.startStreaming(payload, NewRTPSender(), s.streamBehavior(setup.Service, setup.Mux))
+	sess.startStreaming(payloadProvider, NewRTPSender(), func() streamBehavior {
+		return s.streamBehavior(setup.Service, setup.Mux)
+	})
 
 	return buildResponse(cseq, "200 OK", s.sessionHeaders(sessionID))
 }
@@ -292,7 +294,62 @@ func (s *Server) streamBehavior(service lab.Service, mux lab.Mux) streamBehavior
 }
 
 func (s *Server) playPayload(profile ts.ServiceProfile, service lab.Service, mux lab.Mux) ([]byte, error) {
-	scenario := s.lab.Scenario()
+	return s.playPayloadForScenario(profile, service, mux, s.lab.Scenario())
+}
+
+func (s *Server) playPayloadProvider(profile ts.ServiceProfile, service lab.Service, mux lab.Mux) (streamPayloadProvider, error) {
+	var mu sync.Mutex
+	cache := make(map[string][]byte)
+	lastKey := ""
+
+	load := func(scenario lab.Scenario) ([]byte, error) {
+		key := streamPayloadKey(scenario, service, mux)
+		mu.Lock()
+		if payload, ok := cache[key]; ok {
+			mu.Unlock()
+			return payload, nil
+		}
+		mu.Unlock()
+
+		payload, err := s.playPayloadForScenario(profile, service, mux, scenario)
+		if err != nil {
+			return nil, err
+		}
+		mu.Lock()
+		cache[key] = payload
+		lastKey = key
+		mu.Unlock()
+		return payload, nil
+	}
+
+	if _, err := load(s.lab.Scenario()); err != nil {
+		return nil, err
+	}
+	return func() []byte {
+		scenario := s.lab.Scenario()
+		payload, err := load(scenario)
+		if err == nil {
+			return payload
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		return cache[lastKey]
+	}, nil
+}
+
+func streamPayloadKey(scenario lab.Scenario, service lab.Service, mux lab.Mux) string {
+	if !scenario.AppliesTo(service, mux) {
+		return lab.ScenarioNormal
+	}
+	switch scenario.Name {
+	case lab.ScenarioMalformedPSI, lab.ScenarioContinuityErrors, lab.ScenarioEPGGap:
+		return fmt.Sprintf("%s|%s|%s|%d", scenario.Name, scenario.ServiceID, scenario.MuxID, scenario.DurationMin)
+	default:
+		return lab.ScenarioNormal
+	}
+}
+
+func (s *Server) playPayloadForScenario(profile ts.ServiceProfile, service lab.Service, mux lab.Mux, scenario lab.Scenario) ([]byte, error) {
 	clock, err := epg.ParseClock(s.cfg.EPGClock)
 	if err != nil {
 		return nil, err
@@ -427,6 +484,10 @@ type streamBehavior struct {
 	jitterDelay time.Duration
 }
 
+type streamPayloadProvider func() []byte
+
+type streamBehaviorProvider func() streamBehavior
+
 func (b streamBehavior) shouldDrop(packetNumber int) bool {
 	return b.dropEvery > 0 && packetNumber%b.dropEvery == 0
 }
@@ -438,7 +499,7 @@ func (b streamBehavior) jitterFor(packetNumber int) time.Duration {
 	return 0
 }
 
-func (s *session) startStreaming(payload []byte, sender *RTPSender, behavior streamBehavior) {
+func (s *session) startStreaming(payloadProvider streamPayloadProvider, sender *RTPSender, behaviorProvider streamBehaviorProvider) {
 	s.streamMu.Lock()
 	defer s.streamMu.Unlock()
 	s.stopStreamingLocked()
@@ -456,8 +517,9 @@ func (s *session) startStreaming(payload []byte, sender *RTPSender, behavior str
 
 	go func() {
 		offset := 0
-		sent := 0
+		behaviorSent := 0
 		packetNumber := 0
+		var lastBehavior streamBehavior
 		ticker := time.NewTicker(10 * time.Millisecond)
 		defer ticker.Stop()
 		for {
@@ -465,6 +527,15 @@ func (s *session) startStreaming(payload []byte, sender *RTPSender, behavior str
 			case <-stopCh:
 				return
 			case <-ticker.C:
+				behavior := streamBehavior{}
+				if behaviorProvider != nil {
+					behavior = behaviorProvider()
+				}
+				if behavior != lastBehavior {
+					behaviorSent = 0
+					lastBehavior = behavior
+				}
+				payload := payloadProvider()
 				chunk, next := source.ChunkAt(payload, offset)
 				if len(chunk) > 0 {
 					packetNumber++
@@ -473,8 +544,8 @@ func (s *session) startStreaming(payload []byte, sender *RTPSender, behavior str
 							time.Sleep(jitter)
 						}
 						_ = sender.Send(conn, dest, chunk)
-						sent++
-						if behavior.packetLimit > 0 && sent >= behavior.packetLimit {
+						behaviorSent++
+						if behavior.packetLimit > 0 && behaviorSent >= behavior.packetLimit {
 							s.finishStreaming(conn, stopCh)
 							return
 						}

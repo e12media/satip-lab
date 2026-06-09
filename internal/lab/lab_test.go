@@ -470,6 +470,9 @@ func TestScenarioTimelineRejectsInvalidSteps(t *testing.T) {
 	if err := manager.SetScenarioTimelineAt([]lab.ScenarioTimelineStep{{AtMS: 10, Name: lab.ScenarioNormal}}, start); err != lab.ErrScenarioTimeline {
 		t.Fatalf("timeline without zero start: got %v", err)
 	}
+	if err := manager.SetScenarioTimelineAt([]lab.ScenarioTimelineStep{{AtMS: 0, Name: lab.ScenarioNormal}, {AtMS: 0, Name: lab.ScenarioRTPStop}}, start); err != lab.ErrScenarioTimeline {
+		t.Fatalf("duplicate at_ms: got %v", err)
+	}
 	if err := manager.SetScenarioTimelineAt([]lab.ScenarioTimelineStep{{AtMS: 0, Name: lab.ScenarioNormal}, {AtMS: 500, Name: "missing"}}, start); err != lab.ErrUnknownScenario {
 		t.Fatalf("unknown scenario step: got %v", err)
 	}

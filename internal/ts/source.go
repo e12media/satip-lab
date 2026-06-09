@@ -81,6 +81,9 @@ func (s *Source) ChunkAt(payload []byte, offset int) ([]byte, int) {
 	if len(payload) == 0 {
 		return nil, 0
 	}
+	if offset < 0 || offset >= len(payload) {
+		offset = 0
+	}
 	end := offset + chunkSize
 	if end >= len(payload) {
 		chunk := payload[offset:]

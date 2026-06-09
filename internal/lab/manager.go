@@ -547,7 +547,7 @@ func (m *Manager) validateTimelineSteps(steps []ScenarioTimelineStep) ([]Scenari
 	validated := make([]ScenarioTimelineStep, len(steps))
 	previous := -1
 	for i, step := range steps {
-		if step.AtMS < 0 || step.AtMS < previous {
+		if step.AtMS < 0 || step.AtMS <= previous {
 			return nil, ErrScenarioTimeline
 		}
 		previous = step.AtMS
