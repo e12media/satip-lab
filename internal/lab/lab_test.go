@@ -607,6 +607,18 @@ func TestTunerWedgedScenarioRejectsSetupUntilReset(t *testing.T) {
 	}
 }
 
+func TestScenarioTimelineRejectsTunerWedgedStep(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	start := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
+	err := manager.SetScenarioTimelineAt([]lab.ScenarioTimelineStep{
+		{AtMS: 0, Name: lab.ScenarioNormal},
+		{AtMS: 1000, Name: lab.ScenarioTunerWedged},
+	}, start)
+	if err != lab.ErrScenarioTimeline {
+		t.Fatalf("tuner_wedged timeline step: got %v", err)
+	}
+}
+
 func TestNoSignalScenarioRejectsSetupWithoutAllocatingTuner(t *testing.T) {
 	manager := lab.NewManager(lab.DefaultCatalog(), 1)
 	if err := manager.SetScenario(lab.ScenarioNoSignal); err != nil {
@@ -626,20 +638,21 @@ func TestNoSignalScenarioRejectsSetupWithoutAllocatingTuner(t *testing.T) {
 
 func TestSignalRecoveryScenarioReportsRecoveringThenLocked(t *testing.T) {
 	manager := lab.NewManager(lab.DefaultCatalog(), 1)
-	if err := manager.SetScenario(lab.ScenarioSignalRecovery); err != nil {
-		t.Fatal(err)
-	}
 	setup, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1")
 	if err != nil {
 		t.Fatal(err)
 	}
+	activatedAt := setup.Session.CreatedAt.Add(2 * time.Second)
+	if err := manager.SetScenarioOptionsAt(lab.ScenarioSignalRecovery, "", "", 0, activatedAt); err != nil {
+		t.Fatal(err)
+	}
 
-	recovering := manager.StatusAt(setup.Session.CreatedAt).Tuners[0].Frontend
+	recovering := manager.StatusAt(activatedAt).Tuners[0].Frontend
 	if recovering.State != lab.FrontendRecovering {
 		t.Fatalf("expected recovering immediately after setup, got %+v", recovering)
 	}
-	locked := manager.StatusAt(setup.Session.CreatedAt.Add(250 * time.Millisecond)).Tuners[0].Frontend
-	if locked.State != lab.FrontendLocked || locked.LastLockChange == nil || !locked.LastLockChange.Equal(setup.Session.CreatedAt.Add(250*time.Millisecond)) {
+	locked := manager.StatusAt(activatedAt.Add(250 * time.Millisecond)).Tuners[0].Frontend
+	if locked.State != lab.FrontendLocked || locked.LastLockChange == nil || !locked.LastLockChange.Equal(activatedAt.Add(250*time.Millisecond)) {
 		t.Fatalf("expected locked after recovery window, got %+v", locked)
 	}
 }

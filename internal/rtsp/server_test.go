@@ -878,9 +878,27 @@ func TestPlayUsesDelayedPSIScenarioStartupGap(t *testing.T) {
 		t.Fatal("expected delayed_psi to delay the first RTP packets")
 	}
 	_ = rtpConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-	if _, _, err := rtpConn.ReadFromUDP(buf); err != nil {
+	n, _, err := rtpConn.ReadFromUDP(buf)
+	if err != nil {
 		t.Fatalf("expected RTP after delayed PSI startup gap: %v", err)
 	}
+	if !rtpPayloadStartsWithPATPMT(buf[:n]) {
+		t.Fatalf("first delayed_psi RTP packet should carry startup PAT/PMT evidence, got % x", buf[:min(n, 32)])
+	}
+}
+
+func rtpPayloadStartsWithPATPMT(packet []byte) bool {
+	if len(packet) < 12+2*188 {
+		return false
+	}
+	return tsPacketPID(packet[12:]) == 0 && tsPacketPID(packet[12+188:]) == 5100
+}
+
+func tsPacketPID(packet []byte) int {
+	if len(packet) < 4 || packet[0] != 0x47 {
+		return -1
+	}
+	return int(packet[1]&0x1f)<<8 | int(packet[2])
 }
 
 func TestActiveStreamObservesTimelineRTPStopTransition(t *testing.T) {

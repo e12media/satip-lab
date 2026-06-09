@@ -24,13 +24,14 @@ var (
 )
 
 type Manager struct {
-	mu       sync.Mutex
-	catalog  Catalog
-	tuners   []Tuner
-	sessions map[string]Session
-	events   []Event
-	scenario Scenario
-	timeline *scenarioTimeline
+	mu                sync.Mutex
+	catalog           Catalog
+	tuners            []Tuner
+	sessions          map[string]Session
+	events            []Event
+	scenario          Scenario
+	scenarioChangedAt time.Time
+	timeline          *scenarioTimeline
 }
 
 type SetupResult struct {
@@ -162,11 +163,13 @@ func NewManager(catalog Catalog, tunerCount int) *Manager {
 	for i := range tuners {
 		tuners[i] = Tuner{ID: i + 1, State: "idle", Frontend: idleFrontend()}
 	}
+	now := time.Now().UTC()
 	return &Manager{
-		catalog:  catalog,
-		tuners:   tuners,
-		sessions: make(map[string]Session),
-		scenario: scenarioByName(ScenarioNormal),
+		catalog:           catalog,
+		tuners:            tuners,
+		sessions:          make(map[string]Session),
+		scenario:          scenarioByName(ScenarioNormal),
+		scenarioChangedAt: now,
 	}
 }
 
@@ -501,6 +504,10 @@ func (m *Manager) SetScenarioTarget(name, serviceID, muxID string) error {
 }
 
 func (m *Manager) SetScenarioOptions(name, serviceID, muxID string, durationMin int) error {
+	return m.SetScenarioOptionsAt(name, serviceID, muxID, durationMin, time.Now().UTC())
+}
+
+func (m *Manager) SetScenarioOptionsAt(name, serviceID, muxID string, durationMin int, now time.Time) error {
 	scenario, ok := lookupScenario(name)
 	if !ok {
 		return ErrUnknownScenario
@@ -527,10 +534,12 @@ func (m *Manager) SetScenarioOptions(name, serviceID, muxID string, durationMin 
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.scenarioAtLocked(time.Now().UTC())
+	now = now.UTC()
+	m.scenarioAtLocked(now)
 	m.scenario = scenario
+	m.scenarioChangedAt = now
 	m.timeline = nil
-	m.recomputeAllFrontendsLocked(time.Now().UTC())
+	m.recomputeAllFrontendsLocked(now)
 	m.recordLocked(Event{Type: "scenario_changed", Message: scenario.Name})
 	return nil
 }
@@ -556,6 +565,7 @@ func (m *Manager) SetScenarioTimelineAt(steps []ScenarioTimelineStep, now time.T
 	defer m.mu.Unlock()
 	m.timeline = &scenarioTimeline{StartedAt: now.UTC(), StepIndex: 0, Steps: validated}
 	m.scenario = first
+	m.scenarioChangedAt = now.UTC()
 	m.recomputeAllFrontendsLocked(now.UTC())
 	m.recordLocked(Event{Type: "scenario_timeline_started", Message: first.Name})
 	return nil
@@ -575,6 +585,9 @@ func (m *Manager) validateTimelineSteps(steps []ScenarioTimelineStep) ([]Scenari
 		scenario, ok := lookupScenario(step.Name)
 		if !ok {
 			return nil, ErrUnknownScenario
+		}
+		if scenario.Name == ScenarioTunerWedged {
+			return nil, ErrScenarioTimeline
 		}
 		if (step.ServiceID != "" || step.MuxID != "") && !scenario.SupportsTarget() {
 			return nil, ErrScenarioTarget
@@ -673,6 +686,7 @@ func (m *Manager) scenarioAtLocked(now time.Time) Scenario {
 	if stepIndex != m.timeline.StepIndex {
 		m.timeline.StepIndex = stepIndex
 		m.scenario = scenarioFromTimelineStep(m.timeline.Steps[stepIndex])
+		m.scenarioChangedAt = now
 		m.recomputeAllFrontendsLocked(now)
 		m.recordLocked(Event{Type: "scenario_timeline_step", Message: m.scenario.Name})
 	}
@@ -826,7 +840,7 @@ func (m *Manager) recomputeTunerFrontendLocked(tunerID int, now time.Time) {
 				continue
 			}
 			if !timelineRecovery && m.scenario.Name == ScenarioSignalRecovery && m.scenario.AppliesTo(service, mux) {
-				frontend = signalRecoveryFrontend(m.tuners[i].TuneStartedAt, now)
+				frontend = signalRecoveryFrontend(m.scenarioChangedAt, now)
 				break
 			}
 			if scenarioFrontend, ok := frontendForScenario(m.scenario, service, mux, now); ok {

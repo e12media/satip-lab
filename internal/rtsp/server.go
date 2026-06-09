@@ -24,6 +24,7 @@ var interleavedPattern = regexp.MustCompile(`(?i)interleaved=(\d+)-(\d+)`)
 
 const slowRTSPDelay = 250 * time.Millisecond
 const coldBootDelay = 750 * time.Millisecond
+const delayedPSIStartupDelay = 80 * time.Millisecond
 const rtspSessionTimeout = 60 * time.Second
 
 type Server struct {
@@ -406,7 +407,7 @@ func (s *Server) streamBehavior(service lab.Service, mux lab.Mux) streamBehavior
 	case lab.ScenarioRTPBlackhole:
 		return streamBehavior{dropAll: true}
 	case lab.ScenarioDelayedPSI:
-		return streamBehavior{initialDrop: 3}
+		return streamBehavior{startupDelay: delayedPSIStartupDelay}
 	default:
 		return streamBehavior{}
 	}
@@ -609,12 +610,12 @@ type session struct {
 }
 
 type streamBehavior struct {
-	packetLimit int
-	dropEvery   int
-	dropAll     bool
-	initialDrop int
-	jitterEvery int
-	jitterDelay time.Duration
+	packetLimit  int
+	dropEvery    int
+	dropAll      bool
+	startupDelay time.Duration
+	jitterEvery  int
+	jitterDelay  time.Duration
 }
 
 type streamPayloadProvider func() []byte
@@ -623,9 +624,6 @@ type streamBehaviorProvider func() streamBehavior
 
 func (b streamBehavior) shouldDrop(packetNumber int) bool {
 	if b.dropAll {
-		return true
-	}
-	if b.initialDrop > 0 && packetNumber <= b.initialDrop {
 		return true
 	}
 	return b.dropEvery > 0 && packetNumber%b.dropEvery == 0
@@ -668,6 +666,7 @@ func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider,
 		packetNumber := 0
 		behaviorPacketNumber := 0
 		var lastBehavior streamBehavior
+		var behaviorStartedAt time.Time
 		ticker := time.NewTicker(10 * time.Millisecond)
 		defer ticker.Stop()
 		for {
@@ -683,6 +682,10 @@ func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider,
 					behaviorSent = 0
 					behaviorPacketNumber = 0
 					lastBehavior = behavior
+					behaviorStartedAt = time.Now()
+				}
+				if behavior.startupDelay > 0 && time.Since(behaviorStartedAt) < behavior.startupDelay {
+					continue
 				}
 				payload := payloadProvider()
 				chunk, next := source.ChunkAt(payload, offset)
@@ -728,6 +731,7 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 		packetNumber := 0
 		behaviorPacketNumber := 0
 		var lastBehavior streamBehavior
+		var behaviorStartedAt time.Time
 		ticker := time.NewTicker(10 * time.Millisecond)
 		defer ticker.Stop()
 		for {
@@ -743,6 +747,10 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 					behaviorSent = 0
 					behaviorPacketNumber = 0
 					lastBehavior = behavior
+					behaviorStartedAt = time.Now()
+				}
+				if behavior.startupDelay > 0 && time.Since(behaviorStartedAt) < behavior.startupDelay {
+					continue
 				}
 				payload := payloadProvider()
 				chunk, next := source.ChunkAt(payload, offset)
