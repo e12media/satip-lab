@@ -107,6 +107,14 @@ Deferred from v0.2:
 - [x] Non-spec behavior evidence is rejected unless profile confidence is `captured-trace` or `owned-hardware`.
 - [x] Runtime profile loading remains Go-defined; YAML behavior promotion is a later reviewed step.
 
+## v1.8 RF/Tuner Telemetry V1
+
+- [x] `/api/tuners` and `/api/status` expose deterministic frontend telemetry for each tuner.
+- [x] Normal tuned frontends report locked state, synthetic signal strength, SNR, BER/PER, lock timing, and last lock transition.
+- [x] `signal_degraded`, `lock_loss`, and `slow_lock` scenarios provide deterministic RF-like status variants.
+- [x] RF telemetry scenarios support `service_id` and `mux_id` targeting.
+- [x] RTSP setup/play behavior remains unchanged for telemetry-only scenarios.
+
 ## Digital Twin Roadmap
 
 Use a spine-first implementation order: land the current foundations, add

@@ -120,6 +120,7 @@ func buildAgentContext(cfg config.Config, manager *lab.Manager) AgentContext {
 			"compatibility_profiles": true,
 			"xmltv_epg":              true,
 			"eit_present_following":  true,
+			"frontend_telemetry":     true,
 			"rtsp_rtp_smoke":         true,
 			"runtime_scenarios":      true,
 		},
@@ -170,6 +171,12 @@ func scenarioExpectationHint(name string) string {
 		return "RTP packet framing remains valid, but MPEG-TS continuity counters are corrupted; clients should surface TS continuity errors or recover at the demux layer."
 	case lab.ScenarioMalformedPSI:
 		return "RTP and MPEG-TS packet framing remain valid, but PAT/PMT headers are corrupted; clients should surface PSI/parser evidence rather than transport failure."
+	case lab.ScenarioSignalDegraded:
+		return "RTSP SETUP and PLAY still succeed, while /api/tuners reports frontend.state=degraded with deterministic signal_strength=42, snr_db=6.5, ber=0.00025, and per=0.02."
+	case lab.ScenarioLockLoss:
+		return "RTSP SETUP and PLAY still succeed, while /api/tuners reports frontend.state=lost with deterministic zero signal and high BER/PER for lock-loss UI and retry handling."
+	case lab.ScenarioSlowLock:
+		return "RTSP SETUP and PLAY still succeed, while /api/tuners reports frontend.state=tuning with lock_ms=1200 for slow-lock UI and timeout tolerance tests."
 	default:
 		return ""
 	}

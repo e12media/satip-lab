@@ -40,7 +40,7 @@ The response includes:
 - Self-contained EPG evidence URLs, including `urls.xmltv` and `urls.clock`.
 - Ready-to-use client test environment variables.
 - Catalog source, catalog size, bundled fixture path, and a sample RTSP tune URL.
-- Feature flags for custom catalogs, compatibility profiles, XMLTV, EIT present/following, RTSP/RTP smoke, and runtime scenarios.
+- Feature flags for custom catalogs, compatibility profiles, XMLTV, EIT present/following, frontend telemetry, RTSP/RTP smoke, and runtime scenarios.
 - Runtime profile name from `runtime.profile`.
 - Compatibility profile names and corpus path from `compatibility`.
 - Runtime scenario names and whether they can be scoped by `service_id` or `mux_id`.
@@ -101,6 +101,9 @@ RTSP behavior. See `docs/compatibility/servers.md`.
 | `rtp_jitter` | Buffering and timing behavior; expect every third RTP packet to be delayed by 40 ms. |
 | `cc_errors` | MPEG-TS continuity-counter error handling. |
 | `malformed_psi` | PAT/PMT validation and error reporting. |
+| `signal_degraded` | Signal-quality UI and retry handling; expect `/api/tuners` frontend `state=degraded`. |
+| `lock_loss` | Lost-lock UI and recovery handling; expect `/api/tuners` frontend `state=lost`. |
+| `slow_lock` | Slow-lock UI and timeout tolerance; expect `/api/tuners` frontend `state=tuning` and `lock_ms=1200`. |
 | `epg_gap` | Missing schedule windows. |
 | `epg_mismatch` | M3U/XMLTV channel id mismatch handling. |
 | `epg_stale` | Stale EPG refresh behavior. |

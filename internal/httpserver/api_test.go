@@ -46,6 +46,49 @@ func TestAPICatalogMuxesAndServices(t *testing.T) {
 	}
 }
 
+func TestAPITunersExposeFrontendTelemetry(t *testing.T) {
+	labManager := lab.NewManager(lab.DefaultCatalog(), 1)
+	if err := labManager.SetScenario(lab.ScenarioSignalDegraded); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := labManager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	handler := httpserver.New(config.Config{}, labManager).Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tuners", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/tuners status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got []struct {
+		ID       int `json:"id"`
+		Frontend struct {
+			State          string  `json:"state"`
+			SignalStrength int     `json:"signal_strength"`
+			SNRDB          float64 `json:"snr_db"`
+			BER            float64 `json:"ber"`
+			PER            float64 `json:"per"`
+			LockMS         int     `json:"lock_ms"`
+			LastLockChange string  `json:"last_lock_change"`
+		} `json:"frontend"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Frontend.State != lab.FrontendDegraded {
+		t.Fatalf("tuners: %+v", got)
+	}
+	if got[0].Frontend.SignalStrength != 42 || got[0].Frontend.SNRDB != 6.5 || got[0].Frontend.BER != 0.00025 || got[0].Frontend.PER != 0.02 || got[0].Frontend.LockMS != 250 {
+		t.Fatalf("frontend telemetry: %+v", got[0].Frontend)
+	}
+	if got[0].Frontend.LastLockChange == "" {
+		t.Fatalf("frontend last lock change should be populated: %+v", got[0].Frontend)
+	}
+}
+
 func TestReadOnlyAPIEndpointsRejectNonGET(t *testing.T) {
 	handler := httpserver.New(config.Config{}, lab.NewManager(lab.DefaultCatalog(), 1)).Handler()
 
@@ -159,6 +202,9 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 			t.Fatalf("missing feature %q in %+v", feature, got.Features)
 		}
 	}
+	if !got.Features["frontend_telemetry"] {
+		t.Fatalf("missing frontend telemetry feature in %+v", got.Features)
+	}
 	if got.Runtime.Tuners != 2 || got.Runtime.Scenario != lab.ScenarioNormal || got.Runtime.Profile != "generic-satip-1.2" || got.Runtime.ReadinessPath != "/api/agent/context" {
 		t.Fatalf("runtime: %+v", got.Runtime)
 	}
@@ -175,6 +221,9 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 		if scenario.Name == lab.ScenarioRTPLoss && !strings.Contains(scenario.ClientExpectationHint, "every third") {
 			t.Fatalf("rtp_loss expectation hint: %+v", scenario)
 		}
+		if scenario.Name == lab.ScenarioSignalDegraded && !strings.Contains(scenario.ClientExpectationHint, "frontend.state=degraded") {
+			t.Fatalf("signal_degraded expectation hint: %+v", scenario)
+		}
 	}
 	if len(got.Docs) == 0 || got.Docs[0].Path != "docs/agents/README.md" {
 		t.Fatalf("docs: %+v", got.Docs)
@@ -183,6 +232,37 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 		if !containsStringWith(got.RecommendedChecks, hint) {
 			t.Fatalf("recommended checks should include %q workflow hint: %+v", hint, got.RecommendedChecks)
 		}
+	}
+}
+
+func TestAPISchemaIncludesFrontendTelemetryFields(t *testing.T) {
+	handler := httpserver.New(config.Config{}, lab.NewManager(lab.DefaultCatalog(), 1)).Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/schema", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/schema status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Version string `json:"version"`
+		Models  []struct {
+			Name   string   `json:"name"`
+			Fields []string `json:"fields"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != "1.5" {
+		t.Fatalf("schema version: got %q", got.Version)
+	}
+	if !modelHasFields(got.Models, "tuner", "frontend") {
+		t.Fatalf("schema tuner model missing frontend: %+v", got.Models)
+	}
+	if !modelHasFields(got.Models, "frontend", "state", "signal_strength", "snr_db", "ber", "per", "lock_ms", "last_lock_change") {
+		t.Fatalf("schema frontend model missing telemetry fields: %+v", got.Models)
 	}
 }
 
@@ -375,7 +455,8 @@ func TestAPISchema(t *testing.T) {
 		"agent_context": {"version", "urls", "test_env", "catalog", "features", "runtime", "compatibility", "scenarios", "docs", "recommended_checks"},
 		"catalog":       {"muxes", "services"},
 		"status":        {"tuners", "sessions", "events"},
-		"tuner":         {"id", "state", "mux_id", "sessions"},
+		"tuner":         {"id", "state", "mux_id", "sessions", "frontend"},
+		"frontend":      {"state", "signal_strength", "snr_db", "ber", "per", "lock_ms", "last_lock_change"},
 		"session":       {"id", "state", "tuner_id", "service_id", "service", "mux_id", "pids", "pids_all", "client", "created_at", "updated_at"},
 		"event":         {"at", "type", "session_id", "tuner_id", "service_id", "mux_id", "message"},
 		"clock":         {"mode", "now", "tz"},
@@ -484,6 +565,33 @@ func sameStrings(got, want []string) bool {
 func containsStringWith(items []string, want string) bool {
 	for _, item := range items {
 		if strings.Contains(item, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func modelHasFields(models []struct {
+	Name   string   `json:"name"`
+	Fields []string `json:"fields"`
+}, name string, fields ...string) bool {
+	for _, model := range models {
+		if model.Name != name {
+			continue
+		}
+		for _, field := range fields {
+			if !containsExact(model.Fields, field) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func containsExact(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
 			return true
 		}
 	}

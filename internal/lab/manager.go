@@ -52,10 +52,21 @@ type Session struct {
 }
 
 type Tuner struct {
-	ID       int      `json:"id"`
-	State    string   `json:"state"`
-	MuxID    string   `json:"mux_id,omitempty"`
-	Sessions []string `json:"sessions,omitempty"`
+	ID       int           `json:"id"`
+	State    string        `json:"state"`
+	MuxID    string        `json:"mux_id,omitempty"`
+	Sessions []string      `json:"sessions,omitempty"`
+	Frontend TunerFrontend `json:"frontend"`
+}
+
+type TunerFrontend struct {
+	State          string     `json:"state"`
+	SignalStrength int        `json:"signal_strength"`
+	SNRDB          float64    `json:"snr_db"`
+	BER            float64    `json:"ber"`
+	PER            float64    `json:"per"`
+	LockMS         int        `json:"lock_ms"`
+	LastLockChange *time.Time `json:"last_lock_change,omitempty"`
 }
 
 type Event struct {
@@ -88,6 +99,17 @@ const (
 	ScenarioEPGGap           = "epg_gap"
 	ScenarioEPGMismatch      = "epg_mismatch"
 	ScenarioEPGStale         = "epg_stale"
+	ScenarioSignalDegraded   = "signal_degraded"
+	ScenarioLockLoss         = "lock_loss"
+	ScenarioSlowLock         = "slow_lock"
+)
+
+const (
+	FrontendIdle     = "idle"
+	FrontendTuning   = "tuning"
+	FrontendLocked   = "locked"
+	FrontendDegraded = "degraded"
+	FrontendLost     = "lost"
 )
 
 type Scenario struct {
@@ -104,7 +126,7 @@ func NewManager(catalog Catalog, tunerCount int) *Manager {
 	}
 	tuners := make([]Tuner, tunerCount)
 	for i := range tuners {
-		tuners[i] = Tuner{ID: i + 1, State: "idle"}
+		tuners[i] = Tuner{ID: i + 1, State: "idle", Frontend: idleFrontend()}
 	}
 	return &Manager{
 		catalog:  catalog,
@@ -165,6 +187,7 @@ func (m *Manager) Setup(sessionID, rawQuery, client string) (SetupResult, error)
 	}
 	m.sessions[sessionID] = session
 	m.addSessionToTunerLocked(tunerID, sessionID)
+	m.recomputeTunerFrontendLocked(tunerID, now)
 	m.recordLocked(Event{Type: "session_setup", SessionID: sessionID, TunerID: tunerID, ServiceID: service.ID, MuxID: mux.ID})
 
 	return SetupResult{Session: session, Service: service, Mux: mux, TunerID: tunerID}, nil
@@ -344,6 +367,7 @@ func (m *Manager) Reset() {
 		m.tuners[i].State = "idle"
 		m.tuners[i].MuxID = ""
 		m.tuners[i].Sessions = nil
+		m.tuners[i].Frontend = idleFrontend()
 	}
 	m.recordLocked(Event{Type: "reset"})
 }
@@ -449,13 +473,14 @@ func (m *Manager) SetScenarioOptions(name, serviceID, muxID string, durationMin 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.scenario = scenario
+	m.recomputeAllFrontendsLocked(time.Now().UTC())
 	m.recordLocked(Event{Type: "scenario_changed", Message: scenario.Name})
 	return nil
 }
 
 func lookupScenario(name string) (Scenario, bool) {
 	switch name {
-	case ScenarioNormal, ScenarioNoSignal, ScenarioBadM3U, ScenarioTunerBusy, ScenarioRTPStop, ScenarioSlowRTSP, ScenarioMalformedPSI, ScenarioRTPLoss, ScenarioRTPJitter, ScenarioContinuityErrors, ScenarioEPGGap, ScenarioEPGMismatch, ScenarioEPGStale:
+	case ScenarioNormal, ScenarioNoSignal, ScenarioBadM3U, ScenarioTunerBusy, ScenarioRTPStop, ScenarioSlowRTSP, ScenarioMalformedPSI, ScenarioRTPLoss, ScenarioRTPJitter, ScenarioContinuityErrors, ScenarioEPGGap, ScenarioEPGMismatch, ScenarioEPGStale, ScenarioSignalDegraded, ScenarioLockLoss, ScenarioSlowLock:
 		return scenarioByName(name), true
 	default:
 		return Scenario{}, false
@@ -477,6 +502,9 @@ func SupportedScenarios() []Scenario {
 		ScenarioEPGGap,
 		ScenarioEPGMismatch,
 		ScenarioEPGStale,
+		ScenarioSignalDegraded,
+		ScenarioLockLoss,
+		ScenarioSlowLock,
 	}
 	scenarios := make([]Scenario, 0, len(names))
 	for _, name := range names {
@@ -497,7 +525,7 @@ func (s Scenario) AppliesTo(service Service, mux Mux) bool {
 
 func (s Scenario) SupportsTarget() bool {
 	switch s.Name {
-	case ScenarioNoSignal, ScenarioRTPStop, ScenarioMalformedPSI, ScenarioRTPLoss, ScenarioRTPJitter, ScenarioContinuityErrors, ScenarioEPGGap:
+	case ScenarioNoSignal, ScenarioRTPStop, ScenarioMalformedPSI, ScenarioRTPLoss, ScenarioRTPJitter, ScenarioContinuityErrors, ScenarioEPGGap, ScenarioSignalDegraded, ScenarioLockLoss, ScenarioSlowLock:
 		return true
 	default:
 		return false
@@ -530,6 +558,12 @@ func scenarioByName(name string) Scenario {
 		return Scenario{Name: ScenarioEPGMismatch, Description: "Return XMLTV with one channel id that does not match the M3U tvg-id."}
 	case ScenarioEPGStale:
 		return Scenario{Name: ScenarioEPGStale, Description: "Return XMLTV with a stale Last-Modified timestamp relative to the lab clock."}
+	case ScenarioSignalDegraded:
+		return Scenario{Name: ScenarioSignalDegraded, Description: "Expose degraded deterministic RF frontend telemetry while allowing RTSP setup and playback."}
+	case ScenarioLockLoss:
+		return Scenario{Name: ScenarioLockLoss, Description: "Expose lost-lock deterministic RF frontend telemetry while keeping lab control paths deterministic."}
+	case ScenarioSlowLock:
+		return Scenario{Name: ScenarioSlowLock, Description: "Expose a slow frontend lock acquisition state and deterministic lock delay telemetry."}
 	default:
 		return Scenario{Name: ScenarioNormal, Description: "Normal SAT>IP simulator behavior."}
 	}
@@ -575,9 +609,75 @@ func (m *Manager) removeSessionFromTunerLocked(tunerID int, sessionID string) {
 		if len(sessions) == 0 {
 			m.tuners[i].State = "idle"
 			m.tuners[i].MuxID = ""
+			m.tuners[i].Frontend = idleFrontend()
+		} else {
+			m.recomputeTunerFrontendLocked(tunerID, time.Now().UTC())
 		}
 		return
 	}
+}
+
+func (m *Manager) recomputeAllFrontendsLocked(now time.Time) {
+	for _, tuner := range m.tuners {
+		m.recomputeTunerFrontendLocked(tuner.ID, now)
+	}
+}
+
+func (m *Manager) recomputeTunerFrontendLocked(tunerID int, now time.Time) {
+	for i := range m.tuners {
+		if m.tuners[i].ID != tunerID {
+			continue
+		}
+		if m.tuners[i].State == "idle" || len(m.tuners[i].Sessions) == 0 {
+			m.tuners[i].Frontend = idleFrontend()
+			return
+		}
+		frontend := lockedFrontend(now)
+		for _, sessionID := range m.tuners[i].Sessions {
+			session, ok := m.sessions[sessionID]
+			if !ok {
+				continue
+			}
+			service, ok := m.catalog.ServiceByID(session.ServiceID)
+			if !ok {
+				continue
+			}
+			mux, ok := m.catalog.MuxByID(session.MuxID)
+			if !ok {
+				continue
+			}
+			if m.scenario.AppliesTo(service, mux) {
+				frontend = frontendForScenario(m.scenario, service, mux, now)
+				break
+			}
+		}
+		m.tuners[i].Frontend = frontend
+		return
+	}
+}
+
+func frontendForScenario(scenario Scenario, service Service, mux Mux, now time.Time) TunerFrontend {
+	if !scenario.AppliesTo(service, mux) {
+		return lockedFrontend(now)
+	}
+	switch scenario.Name {
+	case ScenarioSignalDegraded:
+		return TunerFrontend{State: FrontendDegraded, SignalStrength: 42, SNRDB: 6.5, BER: 0.00025, PER: 0.02, LockMS: 250, LastLockChange: &now}
+	case ScenarioLockLoss:
+		return TunerFrontend{State: FrontendLost, SignalStrength: 0, SNRDB: 0, BER: 1, PER: 1, LockMS: 250, LastLockChange: &now}
+	case ScenarioSlowLock:
+		return TunerFrontend{State: FrontendTuning, SignalStrength: 55, SNRDB: 8, BER: 0.0001, PER: 0.01, LockMS: 1200, LastLockChange: &now}
+	default:
+		return lockedFrontend(now)
+	}
+}
+
+func lockedFrontend(now time.Time) TunerFrontend {
+	return TunerFrontend{State: FrontendLocked, SignalStrength: 88, SNRDB: 13.5, BER: 0, PER: 0, LockMS: 250, LastLockChange: &now}
+}
+
+func idleFrontend() TunerFrontend {
+	return TunerFrontend{State: FrontendIdle}
 }
 
 func (m *Manager) record(event Event) {
