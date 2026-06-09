@@ -1,6 +1,6 @@
 # Configuration Schema
 
-Schema version: **2.0**
+Schema version: **2.1**
 
 This is the stable v1 configuration contract for `satip-lab`. The same custom schema document is available at runtime as JSON from `GET /api/config/schema`; it is not a JSON Schema draft document.
 
@@ -15,6 +15,7 @@ This is the stable v1 configuration contract for `satip-lab`. The same custom sc
 | `SATIP_LAB_TUNERS` | `2` | integer | Synthetic SAT>IP tuner count. |
 | `SATIP_LAB_SSDP_PORT` | `1900` | integer | SSDP UDP port; `0` disables SSDP. |
 | `SATIP_LAB_CATALOG` | empty | string | Optional YAML channel catalog path; empty uses the built-in five-service DACH catalog. |
+| `SATIP_LAB_TOPOLOGY` | empty | string | Optional YAML topology fixture path for deterministic multi-device client tests. |
 | `SATIP_LAB_TS_PATH` | empty | string | Optional MPEG-TS file to loop for all services; empty uses generated TS. |
 | `SATIP_LAB_SAMPLE_PROFILE` | `synthetic` | string | Built-in service sample profile used when `SATIP_LAB_TS_PATH` is empty. Values: `synthetic`, `h264_aac_short`, `h264_silent`. |
 | `SATIP_LAB_PROFILE` | `generic-satip-1.2` | string | Compatibility profile for SSDP, device XML path/metadata, M3U, and RTSP behavior. Values: `generic-satip-1.2`, `spec`, `minisatip`, `tvheadend`, `triax-tss400`, `telestar-digibit-r1`, `kathrein-exip`, `digital-devices-octopus-net`. |

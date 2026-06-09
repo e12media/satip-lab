@@ -1,6 +1,6 @@
 # Supported Simulation Profile
 
-Version: **v1.7-lab** (Go implementation)
+Version: **v1.8-lab** (Go implementation)
 
 This document defines what `satip-lab` guarantees for clients. Anything not listed here is **not simulated**.
 
@@ -13,7 +13,42 @@ For a side-by-side comparison with real SAT>IP hardware behavior, see [support-m
 | HTTP | `{PUBLIC_HOST}:{PUBLIC_HTTP_PORT}` | Status, XML, M3U, XMLTV |
 | RTSP | `{PUBLIC_HOST}:{PUBLIC_RTSP_PORT}` | Session control |
 | SSDP | UDP `1900` | M-SEARCH responses (disable with `SATIP_LAB_SSDP_PORT=0`) |
-| Lab API | `/api/config/schema`, `/api/clock`, `/api/schema`, `/api/status`, `/api/catalog`, `/api/muxes`, `/api/services`, `/api/tuners`, `/api/sessions`, `/api/events`, `/api/scenario`, `/api/reset` | JSON lab state and runtime scenarios — see `docs/api.md` |
+| Lab API | `/api/config/schema`, `/api/clock`, `/api/schema`, `/api/status`, `/api/topology`, `/api/catalog`, `/api/muxes`, `/api/services`, `/api/tuners`, `/api/sessions`, `/api/events`, `/api/scenario`, `/api/reset` | JSON lab state and runtime scenarios — see `docs/api.md` |
+
+## Topology Fixtures
+
+Set `SATIP_LAB_TOPOLOGY` to a YAML fixture when a client test needs a
+deterministic view of multiple SAT>IP devices. The fixture is exposed through
+`GET /api/topology` and can represent distinct device ids, duplicate friendly
+names, per-device tuner counts, profile-specific description paths, advertised
+HTTP/RTSP ports, and intentionally stale `LOCATION` URLs.
+
+Example:
+
+```yaml
+devices:
+  - id: lab-a
+    friendly_name: SATIP Twin
+    profile: generic-satip-1.2
+    public_host: 127.0.0.1
+    http_port: 18875
+    rtsp_port: 1554
+    tuners: 2
+  - id: lab-b
+    friendly_name: SATIP Twin
+    profile: tvheadend
+    public_host: 127.0.0.1
+    http_port: 18876
+    rtsp_port: 1555
+    tuners: 4
+    location: http://192.0.2.44:8875/stale-desc.xml
+    stale_location: true
+```
+
+The default runtime remains a single server. For end-to-end multi-device
+streaming in CI, run separate simulator service containers or processes with
+distinct ports and `SATIP_LAB_SSDP_PORT=0`, then feed their endpoints to the
+client from `/api/topology` or the CI matrix.
 
 ## Device description
 

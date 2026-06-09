@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/e12media/satip-lab/internal/config"
 	"github.com/e12media/satip-lab/internal/httpserver"
 	"github.com/e12media/satip-lab/internal/lab"
+	"github.com/e12media/satip-lab/internal/topology"
 )
 
 func TestAPICatalogMuxesAndServices(t *testing.T) {
@@ -243,6 +246,7 @@ func TestReadOnlyAPIEndpointsRejectNonGET(t *testing.T) {
 		"/api/clock",
 		"/api/schema",
 		"/api/status",
+		"/api/topology",
 		"/api/catalog",
 		"/api/muxes",
 		"/api/services",
@@ -288,6 +292,7 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 			XMLTV       string `json:"xmltv"`
 			Clock       string `json:"clock"`
 			Schema      string `json:"schema"`
+			Topology    string `json:"topology"`
 		} `json:"urls"`
 		TestEnv map[string]string `json:"test_env"`
 		Catalog struct {
@@ -333,6 +338,9 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 	if got.URLs.XMLTV != "http://satip.test:18875/epg/xmltv.xml" || got.URLs.Clock != "http://satip.test:18875/api/clock" {
 		t.Fatalf("epg urls: %+v", got.URLs)
 	}
+	if got.URLs.Topology != "http://satip.test:18875/api/topology" {
+		t.Fatalf("topology url: %+v", got.URLs)
+	}
 	if got.TestEnv["SATIP_TEST_HTTP_URL"] != "http://satip.test:18875" || got.TestEnv["SATIP_TEST_RTSP_URL"] != "rtsp://satip.test:1554/" {
 		t.Fatalf("test env: %+v", got.TestEnv)
 	}
@@ -342,7 +350,7 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 	if got.Catalog.Source != "built_in" || got.Catalog.CatalogPath != "" || got.Catalog.FixturePath != "fixtures/astra-19.2e-dach.yaml" {
 		t.Fatalf("catalog source: %+v", got.Catalog)
 	}
-	for _, feature := range []string{"custom_catalogs", "compatibility_evidence", "compatibility_profiles", "dvb_si_basics", "xmltv_epg", "eit_present_following", "frontend_lifecycle", "rtsp_interleaved_tcp", "rtsp_rtp_smoke", "runtime_scenarios", "scenario_timelines"} {
+	for _, feature := range []string{"custom_catalogs", "compatibility_evidence", "compatibility_profiles", "dvb_si_basics", "xmltv_epg", "eit_present_following", "frontend_lifecycle", "multi_server_topology", "rtsp_interleaved_tcp", "rtsp_rtp_smoke", "runtime_scenarios", "scenario_timelines"} {
 		if !got.Features[feature] {
 			t.Fatalf("missing feature %q in %+v", feature, got.Features)
 		}
@@ -418,7 +426,7 @@ func TestAPISchemaIncludesFrontendTelemetryFields(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Version != "1.7" {
+	if got.Version != httpserver.APISchemaVersion {
 		t.Fatalf("schema version: got %q", got.Version)
 	}
 	if !modelHasFields(got.Models, "tuner", "frontend") {
@@ -446,7 +454,7 @@ func TestAPISchemaIncludesHardwareStatusFields(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Version != "1.7" {
+	if got.Version != httpserver.APISchemaVersion {
 		t.Fatalf("schema version: got %q", got.Version)
 	}
 	if !modelHasFields(got.Models, "status", "hardware") {
@@ -688,6 +696,7 @@ func TestAPISchema(t *testing.T) {
 		"/api/clock":         {"GET"},
 		"/api/schema":        {"GET"},
 		"/api/status":        {"GET"},
+		"/api/topology":      {"GET"},
 		"/api/catalog":       {"GET"},
 		"/api/muxes":         {"GET"},
 		"/api/services":      {"GET"},
@@ -719,6 +728,8 @@ func TestAPISchema(t *testing.T) {
 		"hardware_streams":       {"active", "playing", "setup", "paused"},
 		"hardware_tuners":        {"total", "in_use", "idle"},
 		"hardware_network":       {"http_port", "rtsp_port", "ssdp_port", "rtsp_sessions", "rtp_streams", "frontend_locks", "recent_events"},
+		"topology":               {"devices"},
+		"topology_device":        {"id", "friendly_name", "profile", "public_host", "http_port", "rtsp_port", "tuners", "location", "stale_location", "description_path"},
 		"tuner":                  {"id", "state", "mux_id", "sessions", "frontend"},
 		"frontend":               {"state", "signal_strength", "snr_db", "ber", "per", "lock_ms", "last_lock_change"},
 		"session":                {"id", "state", "tuner_id", "service_id", "service", "mux_id", "pids", "pids_all", "client", "created_at", "updated_at"},
@@ -816,6 +827,110 @@ func TestBadM3UScenarioReturnsMalformedChannelList(t *testing.T) {
 	}
 }
 
+func TestAPITopologyReturnsDefaultSingleServerDevice(t *testing.T) {
+	handler := httpserver.New(config.Config{
+		PublicHost:     "satip.test",
+		PublicHTTPPort: 18875,
+		PublicRTSPPort: 1554,
+		TunerCount:     3,
+		Profile:        "minisatip",
+	}, lab.NewManager(lab.DefaultCatalog(), 3)).Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/topology", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/topology status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Devices []struct {
+			ID              string `json:"id"`
+			FriendlyName    string `json:"friendly_name"`
+			Profile         string `json:"profile"`
+			PublicHost      string `json:"public_host"`
+			HTTPPort        int    `json:"http_port"`
+			RTSPPort        int    `json:"rtsp_port"`
+			Tuners          int    `json:"tuners"`
+			Location        string `json:"location"`
+			DescriptionPath string `json:"description_path"`
+		} `json:"devices"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Devices) != 1 {
+		t.Fatalf("devices: got %d", len(got.Devices))
+	}
+	device := got.Devices[0]
+	if device.ID != "default" || device.Profile != "minisatip" || device.PublicHost != "satip.test" || device.HTTPPort != 18875 || device.RTSPPort != 1554 || device.Tuners != 3 {
+		t.Fatalf("default topology device: %+v", device)
+	}
+	if device.Location != "http://satip.test:18875/desc.xml" || device.DescriptionPath != "/desc.xml" {
+		t.Fatalf("default topology location/path: %+v", device)
+	}
+}
+
+func TestAPITopologyReturnsConfiguredDevices(t *testing.T) {
+	topologyPath := writeTempFile(t, "topology.yaml", `
+devices:
+  - id: lab-a
+    friendly_name: SATIP Twin
+    profile: generic-satip-1.2
+    public_host: 127.0.0.1
+    http_port: 18875
+    rtsp_port: 1554
+    tuners: 2
+  - id: lab-b
+    friendly_name: SATIP Twin
+    profile: tvheadend
+    public_host: 127.0.0.1
+    http_port: 18876
+    rtsp_port: 1555
+    tuners: 4
+    location: http://192.0.2.44:8875/stale-desc.xml
+    stale_location: true
+`)
+	topologyDoc, err := topology.LoadFile(topologyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := httpserver.NewWithTopology(config.Config{}, lab.NewManager(lab.DefaultCatalog(), 2), topologyDoc).Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/topology", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/topology status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Devices []struct {
+			ID              string `json:"id"`
+			FriendlyName    string `json:"friendly_name"`
+			Profile         string `json:"profile"`
+			HTTPPort        int    `json:"http_port"`
+			RTSPPort        int    `json:"rtsp_port"`
+			Tuners          int    `json:"tuners"`
+			Location        string `json:"location"`
+			StaleLocation   bool   `json:"stale_location"`
+			DescriptionPath string `json:"description_path"`
+		} `json:"devices"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Devices) != 2 {
+		t.Fatalf("devices: got %d", len(got.Devices))
+	}
+	if got.Devices[0].ID != "lab-a" || got.Devices[0].Tuners != 2 || got.Devices[0].Location != "http://127.0.0.1:18875/desc.xml" {
+		t.Fatalf("device A: %+v", got.Devices[0])
+	}
+	if got.Devices[1].FriendlyName != "SATIP Twin" || !got.Devices[1].StaleLocation || got.Devices[1].DescriptionPath != "/satip_server/desc.xml" {
+		t.Fatalf("device B: %+v", got.Devices[1])
+	}
+}
+
 func sameStrings(got, want []string) bool {
 	if len(got) != len(want) {
 		return false
@@ -826,6 +941,15 @@ func sameStrings(got, want []string) bool {
 		}
 	}
 	return true
+}
+
+func writeTempFile(t *testing.T, name, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func containsStringWith(items []string, want string) bool {

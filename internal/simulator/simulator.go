@@ -13,6 +13,7 @@ import (
 	"github.com/e12media/satip-lab/internal/lab"
 	"github.com/e12media/satip-lab/internal/rtsp"
 	"github.com/e12media/satip-lab/internal/ssdp"
+	"github.com/e12media/satip-lab/internal/topology"
 	"github.com/e12media/satip-lab/internal/ts"
 )
 
@@ -34,11 +35,19 @@ func New(cfg config.Config) (*Simulator, error) {
 		}
 		catalog = lab.CatalogFromChannels(list)
 	}
+	topologyDoc := httpserver.DefaultTopology(cfg)
+	if strings.TrimSpace(cfg.TopologyPath) != "" {
+		doc, err := topology.LoadFile(cfg.TopologyPath)
+		if err != nil {
+			return nil, err
+		}
+		topologyDoc = doc
+	}
 	labManager := lab.NewManager(catalog, cfg.TunerCount)
 	rtspServer := rtsp.NewServer(cfg, source, labManager)
 	return &Simulator{
 		cfg:  cfg,
-		http: httpserver.New(cfg, labManager, rtspServer.Reset),
+		http: httpserver.NewWithTopology(cfg, labManager, topologyDoc, rtspServer.Reset),
 		rtsp: rtspServer,
 		ssdp: ssdp.New(cfg),
 		lab:  labManager,
