@@ -22,7 +22,8 @@ Returns a coding-agent bootstrap document with advertised URLs, test environment
     "clock": "http://127.0.0.1:8875/api/clock",
     "schema": "http://127.0.0.1:8875/api/schema",
     "config_schema": "http://127.0.0.1:8875/api/config/schema",
-    "status": "http://127.0.0.1:8875/api/status"
+    "status": "http://127.0.0.1:8875/api/status",
+    "topology": "http://127.0.0.1:8875/api/topology"
   },
   "test_env": {
     "SATIP_TEST_HTTP_URL": "http://127.0.0.1:8875",
@@ -44,6 +45,7 @@ Returns a coding-agent bootstrap document with advertised URLs, test environment
     "frontend_lifecycle": true,
     "frontend_telemetry": true,
     "hardware_status": true,
+    "multi_server_topology": true,
     "rtsp_interleaved_tcp": true,
     "rtsp_rtp_smoke": true,
     "runtime_scenarios": true,
@@ -93,6 +95,37 @@ Returns the current lab clock used for deterministic XMLTV generation:
 ```
 
 See [epg.md](epg.md) for clock semantics.
+
+## `GET /api/topology`
+
+Returns the deterministic topology document used for client tests. Without
+`SATIP_LAB_TOPOLOGY`, the endpoint returns a single device matching the active
+server configuration. When `SATIP_LAB_TOPOLOGY` points to a YAML fixture, it
+returns the configured device identities, tuner pools, profile-specific
+description paths, and any intentionally stale `LOCATION` values:
+
+```json
+{
+  "devices": [
+    {
+      "id": "lab-a",
+      "friendly_name": "SATIP Twin",
+      "profile": "generic-satip-1.2",
+      "public_host": "127.0.0.1",
+      "http_port": 18875,
+      "rtsp_port": 1554,
+      "tuners": 2,
+      "location": "http://127.0.0.1:18875/desc.xml",
+      "stale_location": false,
+      "description_path": "/desc.xml"
+    }
+  ]
+}
+```
+
+Topology fixtures are a deterministic lab contract for discovery and selection
+tests. In multicast-limited CI, prefer explicit endpoint configuration from
+this document or run separate simulator service containers with SSDP disabled.
 
 ## `GET /epg/xmltv.xml`
 

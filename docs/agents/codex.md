@@ -39,7 +39,7 @@ export SATIP_TEST_RTSP_URL=rtsp://127.0.0.1:554/
 
 Prefer these variables over hard-coded URLs in client tests.
 
-For larger catalog tests, use `SATIP_LAB_CATALOG=fixtures/astra-19.2e-dach.yaml` locally or `/app/fixtures/astra-19.2e-dach.yaml` in Docker. For compatibility hardening, run the same client tests with `SATIP_LAB_PROFILE=tvheadend`, `SATIP_LAB_PROFILE=minisatip`, or another documented profile. For guide fallback tests, remember that generated synthetic TS includes DVB EIT present/following on PID `0x0012`.
+For larger catalog tests, use `SATIP_LAB_CATALOG=fixtures/astra-19.2e-dach.yaml` locally or `/app/fixtures/astra-19.2e-dach.yaml` in Docker. For topology/discovery-selection tests, use `SATIP_LAB_TOPOLOGY` and read `/api/topology`; in CI, prefer explicit endpoints with `SATIP_LAB_SSDP_PORT=0` over multicast discovery. For compatibility hardening, run the same client tests with `SATIP_LAB_PROFILE=tvheadend`, `SATIP_LAB_PROFILE=minisatip`, or another documented profile. For guide fallback tests, remember that generated synthetic TS includes DVB EIT present/following on PID `0x0012`.
 
 ## Agent Rules
 

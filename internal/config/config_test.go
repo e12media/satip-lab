@@ -14,6 +14,7 @@ func TestFromEnvironment(t *testing.T) {
 	t.Setenv("SATIP_LAB_PUBLIC_RTSP_PORT", "2554")
 	t.Setenv("SATIP_LAB_TUNERS", "4")
 	t.Setenv("SATIP_LAB_CATALOG", "/tmp/channels.yaml")
+	t.Setenv("SATIP_LAB_TOPOLOGY", "/tmp/topology.yaml")
 	t.Setenv("SATIP_LAB_SAMPLE_PROFILE", "h264_silent")
 	t.Setenv("SATIP_LAB_PROFILE", "minisatip")
 	t.Setenv("SATIP_LAB_VENDOR_PROFILE", "spec")
@@ -35,6 +36,9 @@ func TestFromEnvironment(t *testing.T) {
 	}
 	if cfg.CatalogPath != "/tmp/channels.yaml" {
 		t.Fatalf("catalog path: got %q", cfg.CatalogPath)
+	}
+	if cfg.TopologyPath != "/tmp/topology.yaml" {
+		t.Fatalf("topology path: got %q", cfg.TopologyPath)
 	}
 	if cfg.EPGClock != "real" {
 		t.Fatalf("epg clock: got %q", cfg.EPGClock)
@@ -113,10 +117,10 @@ func TestProfileCanChangeDeviceDescriptionURL(t *testing.T) {
 func TestSchemaListsStableEnvironmentContract(t *testing.T) {
 	schema := config.Schema()
 
-	if schema.Version != "2.0" {
+	if schema.Version != "2.1" {
 		t.Fatalf("schema version: got %q", schema.Version)
 	}
-	if len(schema.Variables) != 15 {
+	if len(schema.Variables) != 16 {
 		t.Fatalf("schema variables: got %d", len(schema.Variables))
 	}
 	if schema.Variables[0].Name != "SATIP_LAB_BIND" || schema.Variables[0].Default != "0.0.0.0" {
@@ -130,11 +134,18 @@ func TestSchemaListsStableEnvironmentContract(t *testing.T) {
 	foundProfile := false
 	foundVendorProfile := false
 	foundCatalog := false
+	foundTopology := false
 	for _, variable := range schema.Variables {
 		if variable.Name == "SATIP_LAB_CATALOG" {
 			foundCatalog = true
 			if variable.Default != "" {
 				t.Fatalf("catalog default: %+v", variable)
+			}
+		}
+		if variable.Name == "SATIP_LAB_TOPOLOGY" {
+			foundTopology = true
+			if variable.Default != "" {
+				t.Fatalf("topology default: %+v", variable)
 			}
 		}
 		if variable.Name == "SATIP_LAB_SAMPLE_PROFILE" {
@@ -185,6 +196,9 @@ func TestSchemaListsStableEnvironmentContract(t *testing.T) {
 	}
 	if !foundCatalog {
 		t.Fatal("missing SATIP_LAB_CATALOG schema entry")
+	}
+	if !foundTopology {
+		t.Fatal("missing SATIP_LAB_TOPOLOGY schema entry")
 	}
 }
 

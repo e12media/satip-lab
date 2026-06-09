@@ -119,6 +119,32 @@ func TestSimulatorRejectsInvalidCatalogBeforeStart(t *testing.T) {
 	}
 }
 
+func TestSimulatorRejectsInvalidTopologyBeforeStart(t *testing.T) {
+	topologyPath := writeSimulatorCatalogFixture(t, `devices:
+  - id: lab-a
+    friendly_name: SATIP Twin
+    profile: spec
+    public_host: 127.0.0.1
+    http_port: 18875
+    rtsp_port: 1554
+    tuners: 2
+  - id: lab-a
+    friendly_name: Duplicate ID
+    profile: spec
+    public_host: 127.0.0.1
+    http_port: 18876
+    rtsp_port: 1555
+    tuners: 2
+`)
+	_, err := simulator.New(config.Config{TopologyPath: topologyPath})
+	if err == nil {
+		t.Fatal("expected topology validation error")
+	}
+	if !strings.Contains(err.Error(), "duplicate device id") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRTSPSessionOptionsSetupPlayTeardown(t *testing.T) {
 	cfg, sim := startTestSimulator(t)
 	defer stopTestSimulator(sim)

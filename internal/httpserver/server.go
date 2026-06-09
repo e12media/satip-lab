@@ -14,6 +14,7 @@ import (
 	"github.com/e12media/satip-lab/internal/config"
 	"github.com/e12media/satip-lab/internal/epg"
 	"github.com/e12media/satip-lab/internal/lab"
+	"github.com/e12media/satip-lab/internal/topology"
 )
 
 type Server struct {
@@ -23,6 +24,7 @@ type Server struct {
 	lab       *lab.Manager
 	reset     func()
 	startedAt time.Time
+	topology  topology.Document
 }
 
 type Status struct {
@@ -75,6 +77,10 @@ type HardwareNetwork struct {
 }
 
 func New(cfg config.Config, labManager *lab.Manager, reset ...func()) *Server {
+	return NewWithTopology(cfg, labManager, topologyDocument(cfg), reset...)
+}
+
+func NewWithTopology(cfg config.Config, labManager *lab.Manager, topologyDoc topology.Document, reset ...func()) *Server {
 	if labManager == nil {
 		labManager = lab.NewManager(lab.DefaultCatalog(), cfg.TunerCount)
 	}
@@ -82,7 +88,7 @@ func New(cfg config.Config, labManager *lab.Manager, reset ...func()) *Server {
 	if len(reset) > 0 {
 		resetFunc = reset[0]
 	}
-	return &Server{cfg: cfg, lab: labManager, reset: resetFunc, startedAt: time.Now().UTC()}
+	return &Server{cfg: cfg, lab: labManager, reset: resetFunc, startedAt: time.Now().UTC(), topology: topologyDoc}
 }
 
 func (s *Server) status() Status {
@@ -185,6 +191,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/epg/xmltv.xml", s.handleXMLTV)
 	mux.HandleFunc("/api/agent/context", s.handleAPIAgentContext)
 	mux.HandleFunc("/api/status", s.handleAPIStatus)
+	mux.HandleFunc("/api/topology", s.handleAPITopology)
 	mux.HandleFunc("/api/catalog", s.handleAPICatalog)
 	mux.HandleFunc("/api/muxes", s.handleAPIMuxes)
 	mux.HandleFunc("/api/services", s.handleAPIServices)
@@ -292,6 +299,13 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, s.status())
+}
+
+func (s *Server) handleAPITopology(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	writeJSON(w, s.topology)
 }
 
 func (s *Server) handleAPIAgentContext(w http.ResponseWriter, r *http.Request) {

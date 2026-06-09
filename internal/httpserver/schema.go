@@ -1,6 +1,6 @@
 package httpserver
 
-const APISchemaVersion = "1.7"
+const APISchemaVersion = "1.8"
 
 type APISchema struct {
 	Version   string              `json:"version"`
@@ -28,6 +28,7 @@ func Schema() APISchema {
 			{Path: "/api/clock", Methods: []string{"GET"}, Description: "Current deterministic lab clock for EPG generation."},
 			{Path: "/api/schema", Methods: []string{"GET"}, Description: "Versioned lab API contract."},
 			{Path: "/api/status", Methods: []string{"GET"}, Description: "Full lab status."},
+			{Path: "/api/topology", Methods: []string{"GET"}, Description: "Deterministic multi-device topology fixture for client tests."},
 			{Path: "/api/catalog", Methods: []string{"GET"}, Description: "Mux and service catalog."},
 			{Path: "/api/muxes", Methods: []string{"GET"}, Description: "Mux catalog entries."},
 			{Path: "/api/services", Methods: []string{"GET"}, Description: "Service catalog entries."},
@@ -48,6 +49,8 @@ func Schema() APISchema {
 			{Name: "hardware_streams", Fields: []string{"active", "playing", "setup", "paused"}},
 			{Name: "hardware_tuners", Fields: []string{"total", "in_use", "idle"}},
 			{Name: "hardware_network", Fields: []string{"http_port", "rtsp_port", "ssdp_port", "rtsp_sessions", "rtp_streams", "frontend_locks", "recent_events"}},
+			{Name: "topology", Fields: []string{"devices"}},
+			{Name: "topology_device", Fields: []string{"id", "friendly_name", "profile", "public_host", "http_port", "rtsp_port", "tuners", "location", "stale_location", "description_path"}},
 			{Name: "tuner", Fields: []string{"id", "state", "mux_id", "sessions", "frontend"}},
 			{Name: "frontend", Fields: []string{"state", "signal_strength", "snr_db", "ber", "per", "lock_ms", "last_lock_change"}},
 			{Name: "session", Fields: []string{"id", "state", "tuner_id", "service_id", "service", "mux_id", "pids", "pids_all", "client", "created_at", "updated_at"}},

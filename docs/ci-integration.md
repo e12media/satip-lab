@@ -60,6 +60,34 @@ services:
 
 For project-specific fixtures, mount your YAML file into the container and point `SATIP_LAB_CATALOG` at the mounted path. The simulator validates the file before opening ports, so readiness polling will fail fast on invalid test data.
 
+## Multi-device topology fixtures
+
+Use `SATIP_LAB_TOPOLOGY` when your client needs deterministic discovery and
+selection inputs such as duplicate friendly names, distinct tuner pools,
+profile-specific description paths, or stale `LOCATION` values. The topology
+document is available at `/api/topology`, so CI tests can use explicit endpoint
+configuration even when multicast is unavailable:
+
+```yaml
+services:
+  satip-lab:
+    image: ghcr.io/e12media/satip-lab:latest
+    ports:
+      - 554:554
+      - 8875:8875
+    env:
+      SATIP_LAB_PUBLIC_HOST: 127.0.0.1
+      SATIP_LAB_SSDP_PORT: "0"
+      SATIP_LAB_TOPOLOGY: /work/topology.yaml
+    volumes:
+      - ./testdata/satip-topology.yaml:/work/topology.yaml:ro
+```
+
+For end-to-end streaming against multiple devices, run separate simulator
+service containers or `docker run` processes with different HTTP/RTSP host
+ports and `SATIP_LAB_SSDP_PORT=0`. Let the client read `/api/topology` or the
+CI matrix instead of relying on multicast discovery inside GitHub Actions.
+
 ## Tuner-busy diagnostics
 
 For startup-only coverage, run a dedicated CI job or matrix entry with `SATIP_LAB_SCENARIO=tuner_busy`:

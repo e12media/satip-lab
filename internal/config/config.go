@@ -10,7 +10,7 @@ import (
 )
 
 const SatIPSearchTarget = "urn:ses-com:device:SatIPServer:1"
-const SchemaVersion = "2.0"
+const SchemaVersion = "2.1"
 
 type Scenario int
 
@@ -29,6 +29,7 @@ type Config struct {
 	TunerCount          int
 	SSDPort             int
 	CatalogPath         string
+	TopologyPath        string
 	TransportStreamPath string
 	SampleProfile       string
 	Profile             string
@@ -63,6 +64,7 @@ func Schema() SchemaDocument {
 			{Name: "SATIP_LAB_TUNERS", Default: "2", Type: "integer", Description: "Synthetic SAT>IP tuner count."},
 			{Name: "SATIP_LAB_SSDP_PORT", Default: "1900", Type: "integer", Description: "SSDP UDP port; 0 disables SSDP."},
 			{Name: "SATIP_LAB_CATALOG", Default: "", Type: "string", Description: "Optional YAML channel catalog path; empty uses the built-in five-service DACH catalog."},
+			{Name: "SATIP_LAB_TOPOLOGY", Default: "", Type: "string", Description: "Optional YAML topology fixture path for deterministic multi-device client tests."},
 			{Name: "SATIP_LAB_TS_PATH", Default: "", Type: "string", Description: "Optional MPEG-TS file to loop for all services; empty uses generated TS."},
 			{Name: "SATIP_LAB_SAMPLE_PROFILE", Default: "synthetic", Type: "string", Description: "Built-in service sample profile used when SATIP_LAB_TS_PATH is empty.", Enum: []string{"synthetic", "h264_aac_short", "h264_silent"}},
 			{Name: "SATIP_LAB_PROFILE", Default: vendorprofile.NameGeneric, Type: "string", Description: "Compatibility profile for SSDP, device XML path/metadata, M3U, and RTSP behavior.", Enum: vendorprofile.Names()},
@@ -84,6 +86,7 @@ func FromEnvironment() Config {
 		TunerCount:          envInt("SATIP_LAB_TUNERS", 2),
 		SSDPort:             envInt("SATIP_LAB_SSDP_PORT", 1900),
 		CatalogPath:         envOr("SATIP_LAB_CATALOG", ""),
+		TopologyPath:        envOr("SATIP_LAB_TOPOLOGY", ""),
 		TransportStreamPath: envOr("SATIP_LAB_TS_PATH", ""),
 		SampleProfile:       envOr("SATIP_LAB_SAMPLE_PROFILE", "synthetic"),
 		Profile:             envProfile(),

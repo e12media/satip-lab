@@ -187,7 +187,7 @@ trace or owned-hardware evidence exists.
 | P4 | Capture-backed profile ingestion | #9 | Add tooling to validate sanitized RTSP trace or pcap-derived summaries and prepare reviewed profile evidence without runtime YAML behavior loading. |
 | P5 | Trace-backed profile promotion and personality profiles | #7, #12 | Promote one real profile only after evidence exists; implement only documented observed behavior and keep generic/spec behavior stable. |
 | P6 | DVB SI fidelity V1 | #8 | Add bounded fixture-driven SI realism such as SDT/NIT basics, PMT descriptors, PCR timing markers, scrambled flags, or multiple audio descriptors. |
-| P7 | Multi-server and topology simulation | #10 | Support deterministic multiple advertised identities, distinct tuner pools, duplicate names, stale LOCATIONs, and CI guidance for multicast-limited environments. |
+| P7 | Multi-server and topology simulation | #10 | Done: `SATIP_LAB_TOPOLOGY` and `/api/topology` expose deterministic multiple identities, distinct tuner pools, duplicate names, stale LOCATIONs, profile-specific paths, and multicast-limited CI guidance. |
 
 Each tracked issue should carry acceptance criteria, implementation notes, a
 test plan, and blocked-by references. Keep P5 issues open until real
@@ -195,8 +195,8 @@ trace-backed or owned-hardware evidence is available.
 
 ## Next High-Value Slices
 
-- Follow the Digital Twin Roadmap above.
-- Developer ergonomics after the current spine: SSE event stream, richer smoke artifacts, and topology fixtures.
+- Continue evidence-backed profile promotion when sanitized traces or owned-hardware data are available.
+- Developer ergonomics after the current spine: SSE event stream and richer smoke artifacts.
 
 ## Non-goals
 
