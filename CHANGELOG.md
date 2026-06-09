@@ -6,6 +6,8 @@ This project follows semantic versioning for public releases.
 
 ## Unreleased
 
+## 1.3.0 - 2026-06-09
+
 - Add hardware-style status, frontend lifecycle telemetry, and deterministic hardware fault scenarios.
 - Add capture-backed compatibility evidence tooling and DVB SI basics with SDT/NIT generation.
 - Add deterministic multi-server topology fixtures through `SATIP_LAB_TOPOLOGY` and `/api/topology`.
