@@ -146,6 +146,15 @@ Deferred from v0.2:
 - [x] Scenario timelines can drive lock loss and recovery without changing default RTSP success behavior.
 - [x] `/api/agent/context` advertises `frontend_lifecycle`.
 
+## v1.13 Hardware Fault Scenarios V1
+
+- [x] `cold_boot` adds deterministic RTSP startup latency.
+- [x] `tuner_wedged` rejects SETUP until `POST /api/reset` clears the wedged state.
+- [x] `rtp_blackhole` drops all RTP packets while leaving the RTSP session alive.
+- [x] `delayed_psi` delays startup PAT/PMT evidence before normal RTP resumes.
+- [x] `signal_recovery` exposes recovering-to-locked frontend telemetry for missing-signal recovery flows.
+- [x] Fault scenarios are documented in docs and `/api/agent/context`.
+
 ## Digital Twin Roadmap
 
 Use a spine-first implementation order: land the current foundations, add

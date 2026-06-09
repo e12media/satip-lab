@@ -102,14 +102,19 @@ RTSP behavior. See `docs/compatibility/servers.md`.
 | `bad_m3u` | Playlist parser rejection and user-facing import errors. |
 | `no_signal` | Tune failures after valid RTSP `SETUP`. |
 | `slow_rtsp` | Client timeout and retry behavior. |
+| `cold_boot` | Startup latency; expect every RTSP response to be delayed by 750 ms. |
 | `tuner_busy` | Tuner exhaustion handling without needing pre-filled sessions. |
+| `tuner_wedged` | Wedged frontend handling; expect 503 setup failures until `POST /api/reset`. |
 | `rtp_stop` | Playback loss after successful `PLAY`; expect exactly 3 RTP packets before delivery stops. |
+| `rtp_blackhole` | RTP receive timeout while the RTSP session remains alive. |
 | `rtp_loss` | RTP packet loss tolerance; expect every third RTP packet to be dropped. |
 | `rtp_jitter` | Buffering and timing behavior; expect every third RTP packet to be delayed by 40 ms. |
+| `delayed_psi` | Startup parser tolerance; expect a deterministic gap before first PAT/PMT evidence arrives. |
 | `cc_errors` | MPEG-TS continuity-counter error handling. |
 | `malformed_psi` | PAT/PMT validation and error reporting. |
 | `signal_degraded` | Signal-quality UI and retry handling; expect `/api/tuners` frontend `state=degraded`. |
 | `lock_loss` | Lost-lock UI and recovery handling; expect `/api/tuners` frontend `state=lost`. |
+| `signal_recovery` | Missing-signal recovery UI; expect `/api/tuners` frontend `state=recovering` before locked. |
 | `slow_lock` | Slow-lock UI and timeout tolerance; expect `/api/tuners` frontend `state=tuning` and `lock_ms=1200`. |
 | `epg_gap` | Missing schedule windows. |
 | `epg_mismatch` | M3U/XMLTV channel id mismatch handling. |

@@ -587,6 +587,38 @@ func TestTunerBusyScenarioRejectsSetupWithoutAllocatingTuner(t *testing.T) {
 	}
 }
 
+func TestTunerWedgedScenarioRejectsSetupUntilReset(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	if err := manager.SetScenario(lab.ScenarioTunerWedged); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1")
+	if err != lab.ErrTunerWedged {
+		t.Fatalf("expected tuner wedged, got %v", err)
+	}
+
+	manager.Reset()
+	if got := manager.Scenario().Name; got != lab.ScenarioNormal {
+		t.Fatalf("reset should clear wedged scenario, got %q", got)
+	}
+	if _, err := manager.Setup("sess-2", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1"); err != nil {
+		t.Fatalf("setup after reset: %v", err)
+	}
+}
+
+func TestScenarioTimelineRejectsTunerWedgedStep(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	start := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
+	err := manager.SetScenarioTimelineAt([]lab.ScenarioTimelineStep{
+		{AtMS: 0, Name: lab.ScenarioNormal},
+		{AtMS: 1000, Name: lab.ScenarioTunerWedged},
+	}, start)
+	if err != lab.ErrScenarioTimeline {
+		t.Fatalf("tuner_wedged timeline step: got %v", err)
+	}
+}
+
 func TestNoSignalScenarioRejectsSetupWithoutAllocatingTuner(t *testing.T) {
 	manager := lab.NewManager(lab.DefaultCatalog(), 1)
 	if err := manager.SetScenario(lab.ScenarioNoSignal); err != nil {
@@ -601,6 +633,52 @@ func TestNoSignalScenarioRejectsSetupWithoutAllocatingTuner(t *testing.T) {
 	status := manager.Status()
 	if status.Tuners[0].State != "idle" || len(status.Sessions) != 0 {
 		t.Fatalf("no_signal should not allocate state: %+v", status)
+	}
+}
+
+func TestSignalRecoveryScenarioReportsRecoveringThenLocked(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	setup, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	activatedAt := setup.Session.CreatedAt.Add(2 * time.Second)
+	if err := manager.SetScenarioOptionsAt(lab.ScenarioSignalRecovery, "", "", 0, activatedAt); err != nil {
+		t.Fatal(err)
+	}
+
+	recovering := manager.StatusAt(activatedAt).Tuners[0].Frontend
+	if recovering.State != lab.FrontendRecovering {
+		t.Fatalf("expected recovering immediately after setup, got %+v", recovering)
+	}
+	locked := manager.StatusAt(activatedAt.Add(250 * time.Millisecond)).Tuners[0].Frontend
+	if locked.State != lab.FrontendLocked || locked.LastLockChange == nil || !locked.LastLockChange.Equal(activatedAt.Add(250*time.Millisecond)) {
+		t.Fatalf("expected locked after recovery window, got %+v", locked)
+	}
+}
+
+func TestTimelineSignalRecoveryAfterLockLoss(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	setup, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := setup.Session.CreatedAt.Add(250 * time.Millisecond)
+	if err := manager.SetScenarioTimelineAt([]lab.ScenarioTimelineStep{
+		{AtMS: 0, Name: lab.ScenarioLockLoss},
+		{AtMS: 1000, Name: lab.ScenarioSignalRecovery},
+	}, start); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := manager.StatusAt(start.Add(500 * time.Millisecond)).Tuners[0].Frontend.State; got != lab.FrontendLost {
+		t.Fatalf("lock loss state: got %q", got)
+	}
+	if got := manager.StatusAt(start.Add(1100 * time.Millisecond)).Tuners[0].Frontend.State; got != lab.FrontendRecovering {
+		t.Fatalf("recovery state: got %q", got)
+	}
+	if got := manager.StatusAt(start.Add(1300 * time.Millisecond)).Tuners[0].Frontend.State; got != lab.FrontendLocked {
+		t.Fatalf("post-recovery state: got %q", got)
 	}
 }
 

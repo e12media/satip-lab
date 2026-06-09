@@ -713,6 +713,24 @@ func TestStartStreamingStopsAfterPacketLimit(t *testing.T) {
 	}
 }
 
+func TestColdBootScenarioDelaysResponses(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	if err := manager.SetScenario(lab.ScenarioColdBoot); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, manager)
+
+	start := time.Now()
+	resp := server.handleRequest(&fakeTCPConn{remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 55000}}, request{method: "OPTIONS", headers: map[string]string{"cseq": "1"}})
+	elapsed := time.Since(start)
+	if !strings.Contains(resp, "200 OK") {
+		t.Fatalf("OPTIONS failed: %s", resp)
+	}
+	if elapsed < coldBootDelay {
+		t.Fatalf("cold_boot response returned too quickly: %s", elapsed)
+	}
+}
+
 func TestPlayUsesRTPStopScenarioPacketLimit(t *testing.T) {
 	manager := lab.NewManager(lab.DefaultCatalog(), 1)
 	if err := manager.SetScenario(lab.ScenarioRTPStop); err != nil {
@@ -763,6 +781,124 @@ func TestPlayUsesRTPStopScenarioPacketLimit(t *testing.T) {
 	if _, _, err := rtpConn.ReadFromUDP(buf); err == nil {
 		t.Fatal("expected rtp_stop scenario to stop after burst")
 	}
+}
+
+func TestPlayUsesRTPBlackholeScenarioWithoutClosingRTSPSession(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	if err := manager.SetScenario(lab.ScenarioRTPBlackhole); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, manager)
+	rtpConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rtpConn.Close()
+	rtpPort := rtpConn.LocalAddr().(*net.UDPAddr).Port
+
+	setup := server.handleSetup(
+		&fakeTCPConn{remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 55000}},
+		request{
+			method: "SETUP",
+			uri:    "rtsp://127.0.0.1/?src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102",
+			headers: map[string]string{
+				"transport": "RTP/AVP;unicast;destination=127.0.0.1;client_port=" + strconv.Itoa(rtpPort) + "-" + strconv.Itoa(rtpPort+1),
+			},
+		},
+		"1",
+	)
+	if !strings.Contains(setup, "200 OK") {
+		t.Fatalf("SETUP failed: %s", setup)
+	}
+	match := regexp.MustCompile(`Session: (\d+)`).FindStringSubmatch(setup)
+	if len(match) < 2 {
+		t.Fatalf("missing session id: %s", setup)
+	}
+	sessionID := match[1]
+
+	play := server.handlePlay(request{headers: map[string]string{"session": sessionID}}, "2")
+	if !strings.Contains(play, "200 OK") {
+		t.Fatalf("PLAY failed: %s", play)
+	}
+	defer server.handleTeardown(request{headers: map[string]string{"session": sessionID}}, "4")
+
+	buf := make([]byte, 2048)
+	_ = rtpConn.SetReadDeadline(time.Now().Add(80 * time.Millisecond))
+	if _, _, err := rtpConn.ReadFromUDP(buf); err == nil {
+		t.Fatal("expected rtp_blackhole to suppress RTP packets")
+	}
+	keepalive := server.handleGetParameter(request{headers: map[string]string{"session": sessionID}}, "3")
+	if !strings.Contains(keepalive, "200 OK") {
+		t.Fatalf("RTSP session should remain alive: %s", keepalive)
+	}
+}
+
+func TestPlayUsesDelayedPSIScenarioStartupGap(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	if err := manager.SetScenario(lab.ScenarioDelayedPSI); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, manager)
+	rtpConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rtpConn.Close()
+	rtpPort := rtpConn.LocalAddr().(*net.UDPAddr).Port
+
+	setup := server.handleSetup(
+		&fakeTCPConn{remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 55000}},
+		request{
+			method: "SETUP",
+			uri:    "rtsp://127.0.0.1/?src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102",
+			headers: map[string]string{
+				"transport": "RTP/AVP;unicast;destination=127.0.0.1;client_port=" + strconv.Itoa(rtpPort) + "-" + strconv.Itoa(rtpPort+1),
+			},
+		},
+		"1",
+	)
+	if !strings.Contains(setup, "200 OK") {
+		t.Fatalf("SETUP failed: %s", setup)
+	}
+	match := regexp.MustCompile(`Session: (\d+)`).FindStringSubmatch(setup)
+	if len(match) < 2 {
+		t.Fatalf("missing session id: %s", setup)
+	}
+	sessionID := match[1]
+
+	play := server.handlePlay(request{headers: map[string]string{"session": sessionID}}, "2")
+	if !strings.Contains(play, "200 OK") {
+		t.Fatalf("PLAY failed: %s", play)
+	}
+	defer server.handleTeardown(request{headers: map[string]string{"session": sessionID}}, "3")
+
+	buf := make([]byte, 2048)
+	_ = rtpConn.SetReadDeadline(time.Now().Add(25 * time.Millisecond))
+	if _, _, err := rtpConn.ReadFromUDP(buf); err == nil {
+		t.Fatal("expected delayed_psi to delay the first RTP packets")
+	}
+	_ = rtpConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	n, _, err := rtpConn.ReadFromUDP(buf)
+	if err != nil {
+		t.Fatalf("expected RTP after delayed PSI startup gap: %v", err)
+	}
+	if !rtpPayloadStartsWithPATPMT(buf[:n]) {
+		t.Fatalf("first delayed_psi RTP packet should carry startup PAT/PMT evidence, got % x", buf[:min(n, 32)])
+	}
+}
+
+func rtpPayloadStartsWithPATPMT(packet []byte) bool {
+	if len(packet) < 12+2*188 {
+		return false
+	}
+	return tsPacketPID(packet[12:]) == 0 && tsPacketPID(packet[12+188:]) == 5100
+}
+
+func tsPacketPID(packet []byte) int {
+	if len(packet) < 4 || packet[0] != 0x47 {
+		return -1
+	}
+	return int(packet[1]&0x1f)<<8 | int(packet[2])
 }
 
 func TestActiveStreamObservesTimelineRTPStopTransition(t *testing.T) {
