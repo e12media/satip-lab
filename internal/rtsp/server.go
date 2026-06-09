@@ -20,6 +20,7 @@ import (
 
 var clientPortPattern = regexp.MustCompile(`(?i)client_port=(\d+)-(\d+)`)
 var destinationPattern = regexp.MustCompile(`(?i)destination=([^;]+)`)
+var interleavedPattern = regexp.MustCompile(`(?i)interleaved=(\d+)-(\d+)`)
 
 const slowRTSPDelay = 250 * time.Millisecond
 const rtspSessionTimeout = 60 * time.Second
@@ -103,12 +104,15 @@ func (s *Server) handleConn(conn net.Conn) {
 			return
 		}
 		resp := s.handleRequestWithState(conn, req, state)
+		state.writeMu.Lock()
 		_, _ = conn.Write([]byte(resp))
+		state.writeMu.Unlock()
 	}
 }
 
 type connectionState struct {
 	described bool
+	writeMu   sync.Mutex
 }
 
 func (s *Server) handleRequest(conn net.Conn, req request) string {
@@ -148,7 +152,7 @@ func (s *Server) handleRequestWithState(conn net.Conn, req request, state *conne
 	case "DESCRIBE":
 		return s.handleDescribe(cseq)
 	case "SETUP":
-		return s.handleSetup(conn, req, cseq)
+		return s.handleSetupWithState(conn, req, cseq, state)
 	case "PLAY":
 		return s.handlePlay(req, cseq)
 	case "PAUSE":
@@ -180,6 +184,10 @@ func (s *Server) handleDescribe(cseq string) string {
 }
 
 func (s *Server) handleSetup(conn net.Conn, req request, cseq string) string {
+	return s.handleSetupWithState(conn, req, cseq, nil)
+}
+
+func (s *Server) handleSetupWithState(conn net.Conn, req request, cseq string, state *connectionState) string {
 	s.sessionMu.Lock()
 	s.nextID++
 	sessionID := fmt.Sprintf("%08d", s.nextID)
@@ -206,11 +214,28 @@ func (s *Server) handleSetup(conn net.Conn, req request, cseq string) string {
 		clientIP:      transport.destination(remote.IP),
 		clientRTPPort: transport.rtpPort,
 		clientRTCPort: transport.rtcpPort,
+		transport:     transport.mode,
+		rtpChannel:    transport.rtpChannel,
+		rtspConn:      conn,
 		service:       setup.Service,
+	}
+	if state != nil {
+		sess.rtspWriteMu = &state.writeMu
 	}
 	s.sessionMu.Lock()
 	s.sessions[sessionID] = sess
 	s.sessionMu.Unlock()
+
+	if transport.mode == transportInterleaved {
+		return buildResponse(cseq, "200 OK", []string{
+			s.setupSessionHeader(sessionID),
+			fmt.Sprintf(
+				"%s: RTP/AVP/TCP;unicast;interleaved=%d-%d;source=%s",
+				s.vendorProfile.TransportHeader,
+				transport.rtpChannel, transport.rtcpChannel, s.cfg.PublicHost,
+			),
+		})
+	}
 
 	return buildResponse(cseq, "200 OK", []string{
 		s.setupSessionHeader(sessionID),
@@ -470,6 +495,10 @@ type session struct {
 	clientIP      net.IP
 	clientRTPPort int
 	clientRTCPort int
+	transport     transportMode
+	rtpChannel    int
+	rtspConn      net.Conn
+	rtspWriteMu   *sync.Mutex
 	service       lab.Service
 
 	streamMu sync.Mutex
@@ -504,6 +533,14 @@ func (s *session) startStreaming(payloadProvider streamPayloadProvider, sender *
 	defer s.streamMu.Unlock()
 	s.stopStreamingLocked()
 
+	if s.transport == transportInterleaved {
+		s.startInterleavedStreamingLocked(payload, sender, behavior)
+		return
+	}
+	s.startUDPStreamingLocked(payload, sender, behavior)
+}
+
+func (s *session) startUDPStreamingLocked(payload []byte, sender *RTPSender, behavior streamBehavior) {
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
 	if err != nil {
 		return
@@ -559,10 +596,64 @@ func (s *session) startStreaming(payloadProvider streamPayloadProvider, sender *
 	}()
 }
 
+func (s *session) startInterleavedStreamingLocked(payload []byte, sender *RTPSender, behavior streamBehavior) {
+	if s.rtspConn == nil {
+		return
+	}
+	stopCh := make(chan struct{})
+	s.stopCh = stopCh
+	source := &ts.Source{}
+	writeMu := s.rtspWriteMu
+	if writeMu == nil {
+		writeMu = &sync.Mutex{}
+		s.rtspWriteMu = writeMu
+	}
+
+	go func() {
+		offset := 0
+		sent := 0
+		packetNumber := 0
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-ticker.C:
+				chunk, next := source.ChunkAt(payload, offset)
+				if len(chunk) > 0 {
+					packetNumber++
+					if !behavior.shouldDrop(packetNumber) {
+						if jitter := behavior.jitterFor(packetNumber); jitter > 0 {
+							time.Sleep(jitter)
+						}
+						frame := interleavedFrame(s.rtpChannel, sender.Packet(chunk))
+						writeMu.Lock()
+						_, err := s.rtspConn.Write(frame)
+						writeMu.Unlock()
+						if err != nil {
+							s.finishInterleavedStreaming(stopCh)
+							return
+						}
+						sent++
+						if behavior.packetLimit > 0 && sent >= behavior.packetLimit {
+							s.finishInterleavedStreaming(stopCh)
+							return
+						}
+					} else {
+						sender.Skip()
+					}
+				}
+				offset = next
+			}
+		}
+	}()
+}
+
 func (s *session) streamingActive() bool {
 	s.streamMu.Lock()
 	defer s.streamMu.Unlock()
-	return s.udpConn != nil
+	return s.udpConn != nil || s.stopCh != nil
 }
 
 func (s *session) finishStreaming(conn *net.UDPConn, stopCh chan struct{}) {
@@ -574,6 +665,15 @@ func (s *session) finishStreaming(conn *net.UDPConn, stopCh chan struct{}) {
 	if s.udpConn == conn {
 		_ = s.udpConn.Close()
 		s.udpConn = nil
+	}
+	s.stopCh = nil
+}
+
+func (s *session) finishInterleavedStreaming(stopCh chan struct{}) {
+	s.streamMu.Lock()
+	defer s.streamMu.Unlock()
+	if s.stopCh != stopCh {
+		return
 	}
 	s.stopCh = nil
 }
@@ -665,16 +765,33 @@ type transportSpec struct {
 	destinationIP net.IP
 	rtpPort       int
 	rtcpPort      int
+	mode          transportMode
+	rtpChannel    int
+	rtcpChannel   int
 }
 
+type transportMode string
+
+const (
+	transportUDP         transportMode = "udp"
+	transportInterleaved transportMode = "interleaved"
+)
+
 func parseTransport(header string) transportSpec {
-	spec := transportSpec{rtpPort: 5000, rtcpPort: 5001}
+	spec := transportSpec{rtpPort: 5000, rtcpPort: 5001, mode: transportUDP, rtpChannel: 0, rtcpChannel: 1}
 	if header == "" {
 		return spec
+	}
+	if strings.Contains(strings.ToLower(header), "rtp/avp/tcp") {
+		spec.mode = transportInterleaved
 	}
 	if m := clientPortPattern.FindStringSubmatch(header); m != nil {
 		spec.rtpPort, _ = strconv.Atoi(m[1])
 		spec.rtcpPort, _ = strconv.Atoi(m[2])
+	}
+	if m := interleavedPattern.FindStringSubmatch(header); m != nil {
+		spec.rtpChannel, _ = strconv.Atoi(m[1])
+		spec.rtcpChannel, _ = strconv.Atoi(m[2])
 	}
 	if m := destinationPattern.FindStringSubmatch(header); m != nil {
 		spec.destinationIP = net.ParseIP(strings.TrimSpace(m[1]))
@@ -722,4 +839,14 @@ func sessionIDFrom(header string) string {
 		return ""
 	}
 	return strings.TrimSpace(strings.Split(header, ";")[0])
+}
+
+func interleavedFrame(channel int, packet []byte) []byte {
+	frame := make([]byte, 4+len(packet))
+	frame[0] = '$'
+	frame[1] = byte(channel)
+	frame[2] = byte(len(packet) >> 8)
+	frame[3] = byte(len(packet))
+	copy(frame[4:], packet)
+	return frame
 }

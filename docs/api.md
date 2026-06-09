@@ -40,6 +40,7 @@ Returns a coding-agent bootstrap document with advertised URLs, test environment
     "xmltv_epg": true,
     "eit_present_following": true,
     "frontend_telemetry": true,
+    "rtsp_interleaved_tcp": true,
     "rtsp_rtp_smoke": true,
     "runtime_scenarios": true
   },

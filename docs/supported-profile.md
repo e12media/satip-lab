@@ -1,6 +1,6 @@
 # Supported Simulation Profile
 
-Version: **v1.6-lab** (Go implementation)
+Version: **v1.7-lab** (Go implementation)
 
 This document defines what `satip-lab` guarantees for clients. Anything not listed here is **not simulated**.
 
@@ -97,8 +97,8 @@ and `503 Service Unavailable` for tuner-busy behavior. See
 |--------|-----------|
 | OPTIONS | `200`, advertises `OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN, GET_PARAMETER` |
 | DESCRIBE | `200`, minimal `application/sdp` body for client compatibility checks |
-| SETUP | `200`, `Session`, `Transport` with client ports |
-| PLAY | `200`, `Session`, starts RTP MPEG-TS to client RTP port; accepts `pids`, `addpids`, and `delpids` control updates |
+| SETUP | `200`, `Session`, `Transport` with UDP client ports or requested TCP interleaved channels |
+| PLAY | `200`, `Session`, starts RTP MPEG-TS to client RTP port or RTSP TCP interleaved channel; accepts `pids`, `addpids`, and `delpids` control updates |
 | PAUSE | `200`, `Session`, stops RTP while keeping the simulated tuner/session allocated |
 | TEARDOWN | `200`, `Session`, stops RTP |
 | GET_PARAMETER | `200`, `Session`, validates the RTSP session as a keepalive |
@@ -106,6 +106,7 @@ and `503 Service Unavailable` for tuner-busy behavior. See
 - Responses terminated with `\r\n\r\n`.
 - CSeq echoed from request.
 - `SETUP` uses `Transport: ... destination=IP` when supplied; otherwise it sends RTP to the RTSP TCP peer address.
+- `SETUP` accepts `Transport: RTP/AVP/TCP;unicast;interleaved=<rtp>-<rtcp>` and replies with matching interleaved channels. `PLAY` then emits SAT>IP-compatible `$` frames on the RTSP TCP connection.
 - RTSP sessions advertise `timeout=60`; valid RTSP requests with a `Session` header refresh activity, and a background reaper expires idle sessions.
 - `SETUP` allocates or shares a simulated tuner for the requested mux.
 - `pids`, `addpids`, and `delpids` update the lab session PID set for client compatibility. `pids=all` is represented as `pids_all: true` in lab state. Malformed or out-of-range PID values are rejected with `400 Bad Request`; explicit `delpids=<pid>` from all-mode is rejected because exclusions are not modeled. Generated RTP remains the deterministic service payload.
@@ -148,6 +149,7 @@ See `docs/api.md` for request/response shapes.
 
 - Payload type **33** (MP2T)
 - Unicast UDP to `client_port` from SETUP
+- TCP interleaved RTP over the RTSP connection when SETUP requests `RTP/AVP/TCP;interleaved=<rtp>-<rtcp>`.
 - ~1316 byte TS chunks, ~10 ms pacing
 - Runtime `rtp_stop` scenario limits RTP to a short deterministic burst after successful `PLAY`.
 - Runtime `malformed_psi` scenario corrupts generated PAT/PMT table headers while keeping RTP and MPEG-TS packet boundaries intact.
@@ -173,7 +175,6 @@ See `docs/api.md` for request/response shapes.
 
 ## Not simulated
 
-- TCP interleaved RTSP
 - RECORD
 - Real RF signal strength, BER, SNR, or frontend hardware measurement
 - Real DVB scanning or RF signal acquisition

@@ -18,6 +18,12 @@ func NewRTPSender() *RTPSender {
 }
 
 func (r *RTPSender) Send(conn *net.UDPConn, dest *net.UDPAddr, mpegTsChunk []byte) error {
+	packet := r.Packet(mpegTsChunk)
+	_, err := conn.WriteToUDP(packet, dest)
+	return err
+}
+
+func (r *RTPSender) Packet(mpegTsChunk []byte) []byte {
 	packet := make([]byte, 12+len(mpegTsChunk))
 	packet[0] = 0x80
 	packet[1] = payloadTypeMP2T & 0x7F
@@ -29,8 +35,7 @@ func (r *RTPSender) Send(conn *net.UDPConn, dest *net.UDPAddr, mpegTsChunk []byt
 	copy(packet[12:], mpegTsChunk)
 
 	r.Skip()
-	_, err := conn.WriteToUDP(packet, dest)
-	return err
+	return packet
 }
 
 func (r *RTPSender) Skip() {
