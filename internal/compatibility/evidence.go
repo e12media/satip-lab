@@ -67,6 +67,8 @@ func ValidateTraceEvidence(body []byte) error {
 	require(&missing, doc.Observed.TimingNotes, "observed.timing_notes")
 	if !jsonFieldPresent(body, "simulator", "implemented_behavior") {
 		missing = append(missing, "simulator.implemented_behavior")
+	} else if !jsonStringArrayField(body, "simulator", "implemented_behavior") {
+		missing = append(missing, "simulator.implemented_behavior must be an array")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required trace evidence fields: %s", strings.Join(missing, ", "))
@@ -132,6 +134,13 @@ func parseTraceEvidence(body []byte) (TraceEvidence, error) {
 	if err := decoder.Decode(&doc); err != nil {
 		return TraceEvidence{}, err
 	}
+	if decoder.More() {
+		return TraceEvidence{}, fmt.Errorf("trailing JSON after trace evidence object")
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err == nil {
+		return TraceEvidence{}, fmt.Errorf("trailing JSON after trace evidence object")
+	}
 	return doc, nil
 }
 
@@ -167,4 +176,41 @@ func jsonFieldPresent(body []byte, path ...string) bool {
 		current = next
 	}
 	return true
+}
+
+func jsonStringArrayField(body []byte, path ...string) bool {
+	value, ok := jsonValueAt(body, path...)
+	if !ok {
+		return false
+	}
+	items, ok := value.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		if _, ok := item.(string); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func jsonValueAt(body []byte, path ...string) (any, bool) {
+	var raw any
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, false
+	}
+	current := raw
+	for _, part := range path {
+		obj, ok := current.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		next, ok := obj[part]
+		if !ok {
+			return nil, false
+		}
+		current = next
+	}
+	return current, true
 }

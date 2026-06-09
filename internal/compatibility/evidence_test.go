@@ -29,6 +29,22 @@ func TestValidateTraceEvidenceReportsMissingMetadata(t *testing.T) {
 	}
 }
 
+func TestValidateTraceEvidenceRejectsNullImplementedBehavior(t *testing.T) {
+	body := strings.Replace(string(validTraceEvidence()), `"implemented_behavior": []`, `"implemented_behavior": null`, 1)
+	err := ValidateTraceEvidence([]byte(body))
+	if err == nil || !strings.Contains(err.Error(), "simulator.implemented_behavior") {
+		t.Fatalf("expected implemented_behavior type error, got %v", err)
+	}
+}
+
+func TestValidateTraceEvidenceRejectsTrailingJSON(t *testing.T) {
+	body := append(validTraceEvidence(), []byte(`{"extra":true}`)...)
+	err := ValidateTraceEvidence(body)
+	if err == nil || !strings.Contains(err.Error(), "trailing JSON") {
+		t.Fatalf("expected trailing JSON error, got %v", err)
+	}
+}
+
 func TestValidateTraceEvidenceRejectsNonSpecWithoutTraceConfidence(t *testing.T) {
 	body := strings.Replace(string(validTraceEvidence()), `"confidence": "captured-trace"`, `"confidence": "public-doc"`, 1)
 	err := ValidateTraceEvidence([]byte(body))

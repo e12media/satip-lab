@@ -14,6 +14,10 @@ func main() {
 	behaviorYAML := flag.Bool("behavior-yaml", false, "print a compatibility profile behavior YAML snippet")
 	flag.Parse()
 
+	if flag.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "unexpected positional arguments: %v\n", flag.Args())
+		os.Exit(2)
+	}
 	if *input == "" {
 		fmt.Fprintln(os.Stderr, "--input is required")
 		os.Exit(2)
