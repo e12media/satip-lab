@@ -107,7 +107,7 @@ trace or owned-hardware evidence exists.
 
 | Priority | Work item | GitHub tracking | Implementation notes |
 |----------|-----------|-----------------|----------------------|
-| P0 | Land current foundation PRs | #3, #4, #5, #6, PR #3, PR #13, PR #14, PR #15 | Merge in dependency-safe order after maintainer review: behavioral evidence, RF telemetry, scenario timelines, then TCP interleaved RTSP/RTP. Reconcile schema/version docs after merges. |
+| P0 | Land current foundation PRs | Issues #4, #5, #6; PRs #3, #13, #14, #15 | Merge in dependency-safe order after maintainer review: behavioral evidence, RF telemetry, scenario timelines, then TCP interleaved RTSP/RTP. Reconcile schema/version docs after merges. |
 | P1 | Hardware-style management/status surface | #11 | Add lab-only hardware-style uptime, firmware/profile metadata, active streams, frontend state, and network counters while keeping `/api/status` backward compatible. |
 | P2 | Frontend/tuner lifecycle V2 | #16 | Model deterministic frontend states such as idle, tuning, locked, degraded, lost, and recovering using RF telemetry and scenario timeline hooks. |
 | P3 | Hardware fault scenarios V1 | #17 | Add explicit deterministic faults such as cold boot delay, wedged tuner until reset, RTP dies while RTSP remains alive, delayed first PAT/PMT, and missing-signal recovery. |
