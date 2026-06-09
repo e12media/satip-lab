@@ -54,11 +54,12 @@ type Session struct {
 }
 
 type Tuner struct {
-	ID       int           `json:"id"`
-	State    string        `json:"state"`
-	MuxID    string        `json:"mux_id,omitempty"`
-	Sessions []string      `json:"sessions,omitempty"`
-	Frontend TunerFrontend `json:"frontend"`
+	ID            int           `json:"id"`
+	State         string        `json:"state"`
+	MuxID         string        `json:"mux_id,omitempty"`
+	Sessions      []string      `json:"sessions,omitempty"`
+	Frontend      TunerFrontend `json:"frontend"`
+	TuneStartedAt time.Time     `json:"-"`
 }
 
 type TunerFrontend struct {
@@ -107,12 +108,15 @@ const (
 )
 
 const (
-	FrontendIdle     = "idle"
-	FrontendTuning   = "tuning"
-	FrontendLocked   = "locked"
-	FrontendDegraded = "degraded"
-	FrontendLost     = "lost"
+	FrontendIdle       = "idle"
+	FrontendTuning     = "tuning"
+	FrontendLocked     = "locked"
+	FrontendDegraded   = "degraded"
+	FrontendLost       = "lost"
+	FrontendRecovering = "recovering"
 )
+
+const defaultLockMS = 250
 
 type Scenario struct {
 	Name        string                  `json:"name"`
@@ -173,7 +177,8 @@ func (m *Manager) Setup(sessionID, rawQuery, client string) (SetupResult, error)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	activeScenario := m.scenarioAtLocked(time.Now().UTC())
+	now := time.Now().UTC()
+	activeScenario := m.scenarioAtLocked(now)
 
 	if activeScenario.Name == ScenarioNoSignal && activeScenario.AppliesTo(service, mux) {
 		m.recordLocked(Event{Type: "setup_rejected", ServiceID: service.ID, MuxID: mux.ID, Message: ErrNoSignal.Error()})
@@ -190,13 +195,12 @@ func (m *Manager) Setup(sessionID, rawQuery, client string) (SetupResult, error)
 		return SetupResult{}, ErrInvalidTune
 	}
 
-	tunerID, err := m.allocateTunerLocked(mux.ID)
+	tunerID, err := m.allocateTunerLocked(mux.ID, now)
 	if err != nil {
 		m.recordLocked(Event{Type: "tuner_busy", ServiceID: service.ID, MuxID: mux.ID, Message: err.Error()})
 		return SetupResult{}, err
 	}
 
-	now := time.Now().UTC()
 	session := Session{
 		ID:        sessionID,
 		State:     "setup",
@@ -371,7 +375,9 @@ func (m *Manager) Status() Status {
 func (m *Manager) StatusAt(now time.Time) Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.scenarioAtLocked(now.UTC())
+	now = now.UTC()
+	m.scenarioAtLocked(now)
+	m.recomputeAllFrontendsLocked(now)
 
 	sessions := make([]Session, 0, len(m.sessions))
 	for _, session := range m.sessions {
@@ -397,6 +403,7 @@ func (m *Manager) Reset() {
 		m.tuners[i].State = "idle"
 		m.tuners[i].MuxID = ""
 		m.tuners[i].Sessions = nil
+		m.tuners[i].TuneStartedAt = time.Time{}
 		m.tuners[i].Frontend = idleFrontend()
 	}
 	m.recordLocked(Event{Type: "reset"})
@@ -705,7 +712,7 @@ func scenarioByName(name string) Scenario {
 	}
 }
 
-func (m *Manager) allocateTunerLocked(muxID string) (int, error) {
+func (m *Manager) allocateTunerLocked(muxID string, now time.Time) (int, error) {
 	for _, tuner := range m.tuners {
 		if tuner.State == "tuned" && tuner.MuxID == muxID {
 			return tuner.ID, nil
@@ -715,6 +722,7 @@ func (m *Manager) allocateTunerLocked(muxID string) (int, error) {
 		if m.tuners[i].State == "idle" {
 			m.tuners[i].State = "tuned"
 			m.tuners[i].MuxID = muxID
+			m.tuners[i].TuneStartedAt = now.UTC()
 			return m.tuners[i].ID, nil
 		}
 	}
@@ -745,6 +753,7 @@ func (m *Manager) removeSessionFromTunerLocked(tunerID int, sessionID string) {
 		if len(sessions) == 0 {
 			m.tuners[i].State = "idle"
 			m.tuners[i].MuxID = ""
+			m.tuners[i].TuneStartedAt = time.Time{}
 			m.tuners[i].Frontend = idleFrontend()
 		} else {
 			m.recomputeTunerFrontendLocked(tunerID, time.Now().UTC())
@@ -768,7 +777,10 @@ func (m *Manager) recomputeTunerFrontendLocked(tunerID int, now time.Time) {
 			m.tuners[i].Frontend = idleFrontend()
 			return
 		}
-		frontend := lockedFrontend(now)
+		frontend := lifecycleFrontend(m.tuners[i].TuneStartedAt, now)
+		if recovery, ok := m.timelineRecoveryFrontendLocked(m.tuners[i], now); ok {
+			frontend = recovery
+		}
 		for _, sessionID := range m.tuners[i].Sessions {
 			session, ok := m.sessions[sessionID]
 			if !ok {
@@ -782,8 +794,8 @@ func (m *Manager) recomputeTunerFrontendLocked(tunerID int, now time.Time) {
 			if !ok {
 				continue
 			}
-			if m.scenario.AppliesTo(service, mux) {
-				frontend = frontendForScenario(m.scenario, service, mux, now)
+			if scenarioFrontend, ok := frontendForScenario(m.scenario, service, mux, now); ok {
+				frontend = scenarioFrontend
 				break
 			}
 		}
@@ -792,28 +804,89 @@ func (m *Manager) recomputeTunerFrontendLocked(tunerID int, now time.Time) {
 	}
 }
 
-func frontendForScenario(scenario Scenario, service Service, mux Mux, now time.Time) TunerFrontend {
+func (m *Manager) timelineRecoveryFrontendLocked(tuner Tuner, now time.Time) (TunerFrontend, bool) {
+	if m.timeline == nil || m.timeline.StepIndex == 0 {
+		return TunerFrontend{}, false
+	}
+	current := m.timeline.Steps[m.timeline.StepIndex]
+	previous := m.timeline.Steps[m.timeline.StepIndex-1]
+	if current.Name != ScenarioNormal || previous.Name != ScenarioLockLoss {
+		return TunerFrontend{}, false
+	}
+	recoveryStartedAt := m.timeline.StartedAt.Add(time.Duration(current.AtMS) * time.Millisecond)
+	if now.Before(recoveryStartedAt) {
+		return TunerFrontend{}, false
+	}
+	previousScenario := scenarioFromTimelineStep(previous)
+	for _, sessionID := range tuner.Sessions {
+		session, ok := m.sessions[sessionID]
+		if !ok {
+			continue
+		}
+		service, ok := m.catalog.ServiceByID(session.ServiceID)
+		if !ok {
+			continue
+		}
+		mux, ok := m.catalog.MuxByID(session.MuxID)
+		if !ok {
+			continue
+		}
+		if previousScenario.AppliesTo(service, mux) {
+			recoveredAt := recoveryStartedAt.Add(defaultLockDuration())
+			if now.Before(recoveredAt) {
+				return recoveringFrontend(recoveryStartedAt), true
+			}
+			return lockedFrontend(recoveredAt), true
+		}
+	}
+	return TunerFrontend{}, false
+}
+
+func frontendForScenario(scenario Scenario, service Service, mux Mux, now time.Time) (TunerFrontend, bool) {
 	if !scenario.AppliesTo(service, mux) {
-		return lockedFrontend(now)
+		return TunerFrontend{}, false
 	}
 	switch scenario.Name {
 	case ScenarioSignalDegraded:
-		return TunerFrontend{State: FrontendDegraded, SignalStrength: 42, SNRDB: 6.5, BER: 0.00025, PER: 0.02, LockMS: 250, LastLockChange: &now}
+		return TunerFrontend{State: FrontendDegraded, SignalStrength: 42, SNRDB: 6.5, BER: 0.00025, PER: 0.02, LockMS: defaultLockMS, LastLockChange: &now}, true
 	case ScenarioLockLoss:
-		return TunerFrontend{State: FrontendLost, SignalStrength: 0, SNRDB: 0, BER: 1, PER: 1, LockMS: 250, LastLockChange: &now}
+		return TunerFrontend{State: FrontendLost, SignalStrength: 0, SNRDB: 0, BER: 1, PER: 1, LockMS: defaultLockMS, LastLockChange: &now}, true
 	case ScenarioSlowLock:
-		return TunerFrontend{State: FrontendTuning, SignalStrength: 55, SNRDB: 8, BER: 0.0001, PER: 0.01, LockMS: 1200, LastLockChange: &now}
+		return TunerFrontend{State: FrontendTuning, SignalStrength: 55, SNRDB: 8, BER: 0.0001, PER: 0.01, LockMS: 1200, LastLockChange: &now}, true
 	default:
-		return lockedFrontend(now)
+		return TunerFrontend{}, false
 	}
 }
 
+func lifecycleFrontend(tuneStartedAt time.Time, now time.Time) TunerFrontend {
+	if tuneStartedAt.IsZero() {
+		return lockedFrontend(now)
+	}
+	lockAt := tuneStartedAt.Add(defaultLockDuration())
+	if now.Before(lockAt) {
+		return tuningFrontend(tuneStartedAt)
+	}
+	return lockedFrontend(lockAt)
+}
+
+func tuningFrontend(startedAt time.Time) TunerFrontend {
+	return TunerFrontend{State: FrontendTuning, SignalStrength: 55, SNRDB: 8, BER: 0.0001, PER: 0.01, LockMS: defaultLockMS, LastLockChange: &startedAt}
+}
+
+func recoveringFrontend(startedAt time.Time) TunerFrontend {
+	return TunerFrontend{State: FrontendRecovering, SignalStrength: 65, SNRDB: 9.5, BER: 0.00005, PER: 0.005, LockMS: defaultLockMS, LastLockChange: &startedAt}
+}
+
 func lockedFrontend(now time.Time) TunerFrontend {
-	return TunerFrontend{State: FrontendLocked, SignalStrength: 88, SNRDB: 13.5, BER: 0, PER: 0, LockMS: 250, LastLockChange: &now}
+	return TunerFrontend{State: FrontendLocked, SignalStrength: 88, SNRDB: 13.5, BER: 0, PER: 0, LockMS: defaultLockMS, LastLockChange: &now}
 }
 
 func idleFrontend() TunerFrontend {
 	return TunerFrontend{State: FrontendIdle}
+}
+
+func defaultLockDuration() time.Duration {
+	return time.Duration(defaultLockMS) * time.Millisecond
 }
 
 func (m *Manager) record(event Event) {

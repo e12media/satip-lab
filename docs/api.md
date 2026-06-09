@@ -39,6 +39,7 @@ Returns a coding-agent bootstrap document with advertised URLs, test environment
     "compatibility_profiles": true,
     "xmltv_epg": true,
     "eit_present_following": true,
+    "frontend_lifecycle": true,
     "frontend_telemetry": true,
     "hardware_status": true,
     "rtsp_interleaved_tcp": true,
@@ -203,7 +204,10 @@ Returns services/channels:
 ## `GET /api/tuners`
 
 Returns tuner state. A tuned tuner includes its mux, session ids, and
-deterministic frontend telemetry:
+deterministic frontend telemetry. Normal `SETUP` allocates a tuner in
+`state=tuning`; after the deterministic `lock_ms=250` window, status reports
+`state=locked`. Timeline recovery from `lock_loss` reports `state=recovering`
+for the same deterministic lock window before returning to locked.
 
 ```json
 [
@@ -225,7 +229,7 @@ deterministic frontend telemetry:
 ]
 ```
 
-Frontend `state` is one of `idle`, `tuning`, `locked`, `degraded`, or `lost`.
+Frontend `state` is one of `idle`, `tuning`, `locked`, `degraded`, `lost`, or `recovering`.
 The values are synthetic and deterministic, intended for client status and
 retry tests rather than real RF measurement.
 
@@ -315,7 +319,7 @@ Supported values:
 | `epg_mismatch` | `/epg/xmltv.xml` changes the ZDF HD XMLTV channel id to `zdf-mismatch.invalid`. |
 | `epg_stale` | `/epg/xmltv.xml` returns normal XMLTV content with `Last-Modified` set 48 hours before the lab clock. |
 | `signal_degraded` | RTSP setup/play still succeed, while targeted `/api/tuners` frontend telemetry reports `state=degraded`, reduced signal/SNR, and non-zero BER/PER. |
-| `lock_loss` | RTSP setup/play still succeed, while targeted `/api/tuners` frontend telemetry reports `state=lost`, zero signal/SNR, and high BER/PER. |
+| `lock_loss` | RTSP setup/play still succeed, while targeted `/api/tuners` frontend telemetry reports `state=lost`, zero signal/SNR, and high BER/PER. When a timeline returns from `lock_loss` to `normal`, the targeted frontend reports `state=recovering` for the deterministic lock window. |
 | `slow_lock` | RTSP setup/play still succeed, while targeted `/api/tuners` frontend telemetry reports `state=tuning` and `lock_ms=1200`. |
 
 Unknown scenario names return `400 Bad Request` and leave the active scenario unchanged.

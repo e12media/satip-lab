@@ -120,6 +120,7 @@ func buildAgentContext(cfg config.Config, manager *lab.Manager) AgentContext {
 			"compatibility_profiles": true,
 			"xmltv_epg":              true,
 			"eit_present_following":  true,
+			"frontend_lifecycle":     true,
 			"frontend_telemetry":     true,
 			"hardware_status":        true,
 			"rtsp_interleaved_tcp":   true,

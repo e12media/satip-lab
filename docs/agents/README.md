@@ -40,13 +40,18 @@ The response includes:
 - Self-contained EPG evidence URLs, including `urls.xmltv` and `urls.clock`.
 - Ready-to-use client test environment variables.
 - Catalog source, catalog size, bundled fixture path, and a sample RTSP tune URL.
-- Feature flags for custom catalogs, compatibility profiles, XMLTV, EIT present/following, frontend telemetry, hardware-style status, RTSP interleaved TCP, RTSP/RTP smoke, and runtime scenarios.
+- Feature flags for custom catalogs, compatibility profiles, XMLTV, EIT present/following, frontend lifecycle, frontend telemetry, hardware-style status, RTSP interleaved TCP, RTSP/RTP smoke, and runtime scenarios.
 - Runtime profile name from `runtime.profile`.
 - Compatibility profile names and corpus path from `compatibility`.
 - Runtime scenario names and whether they can be scoped by `service_id` or `mux_id`.
 - Documentation paths agents should read before editing this repo.
 
 The `features` object describes capabilities supported by the simulator binary. Some capabilities are mode-dependent at runtime; for example, EIT present/following is generated for synthetic TS, while `SATIP_LAB_TS_PATH` and decodable sample profiles are served unchanged.
+
+When `features.frontend_lifecycle` is true, client tests can assert that normal
+`SETUP` reports `frontend.state=tuning` before the deterministic lock window
+elapses, then `frontend.state=locked`. Timeline recovery from `lock_loss` may
+report `frontend.state=recovering` before returning to locked.
 
 ## Recommended Client Test Flow
 
