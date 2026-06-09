@@ -123,6 +123,7 @@ func buildAgentContext(cfg config.Config, manager *lab.Manager) AgentContext {
 			"frontend_telemetry":     true,
 			"rtsp_rtp_smoke":         true,
 			"runtime_scenarios":      true,
+			"scenario_timelines":     true,
 		},
 		Runtime: AgentContextRuntime{
 			Tuners:        len(status.Tuners),

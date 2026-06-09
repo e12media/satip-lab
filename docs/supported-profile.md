@@ -169,6 +169,7 @@ See `docs/api.md` for request/response shapes.
 - Lab state and active RTP senders are kept in memory and reset on process restart or `POST /api/reset`.
 - `POST /api/scenario` changes the runtime lab scenario; unknown names return `400` and leave the scenario unchanged.
 - `POST /api/scenario` accepts optional `service_id` and `mux_id` fields for tune-aware RTSP/RTP scenarios, RF frontend telemetry scenarios, and `epg_gap`. HTTP-only, XMLTV-wide, and pre-tune effects remain global.
+- `POST /api/scenario` also accepts a deterministic `timeline` array. Timeline steps use elapsed milliseconds from the accepted request, expose active timeline state through `GET /api/scenario`, and are cleared by posting a normal scenario object.
 
 ## Not simulated
 

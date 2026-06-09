@@ -45,6 +45,7 @@ For larger catalog tests, use `SATIP_LAB_CATALOG=fixtures/astra-19.2e-dach.yaml`
 
 - Reset state between independent tests with `POST /api/reset`.
 - Use runtime scenarios for deterministic error cases, including frontend telemetry scenarios for signal-quality UI and retry tests.
+- Use scenario timelines when a client test needs failure behavior to evolve over elapsed milliseconds.
 - Keep client application changes in the client repository.
 - If you edit Go code in this repo, run `make test` before reporting success.
 - If you change API behavior, update `docs/api.md` and `docs/api-schema.md`.

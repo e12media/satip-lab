@@ -213,6 +213,43 @@ Changes the active runtime scenario:
 }
 ```
 
+Alternatively, post a deterministic timeline. Steps use elapsed milliseconds
+from the time the request is accepted. The first step must start at `0`.
+
+```json
+{
+  "timeline": [
+    {"at_ms": 0, "name": "normal"},
+    {"at_ms": 1000, "name": "signal_degraded", "mux_id": "src1-11362h-22000-dvbs2"},
+    {"at_ms": 2500, "name": "lock_loss", "mux_id": "src1-11362h-22000-dvbs2"}
+  ]
+}
+```
+
+`GET /api/scenario` returns the active step plus timeline status while a
+timeline is active:
+
+```json
+{
+  "name": "signal_degraded",
+  "description": "Expose degraded deterministic RF frontend telemetry while allowing RTSP setup and playback.",
+  "mux_id": "src1-11362h-22000-dvbs2",
+  "timeline": {
+    "active": true,
+    "step_index": 1,
+    "elapsed_ms": 1500,
+    "steps": [
+      {"at_ms": 0, "name": "normal"},
+      {"at_ms": 1000, "name": "signal_degraded", "mux_id": "src1-11362h-22000-dvbs2"},
+      {"at_ms": 2500, "name": "lock_loss", "mux_id": "src1-11362h-22000-dvbs2"}
+    ]
+  }
+}
+```
+
+Posting a normal scenario object clears any active timeline. Invalid timeline
+steps return `400 Bad Request` and leave the current scenario unchanged.
+
 Supported values:
 
 | Name | Behavior |

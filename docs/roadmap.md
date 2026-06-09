@@ -106,10 +106,18 @@ Deferred from v0.2:
 - [x] RF telemetry scenarios support `service_id` and `mux_id` targeting.
 - [x] RTSP setup/play behavior remains unchanged for telemetry-only scenarios.
 
+## v1.8 Scenario Timelines
+
+- [x] `POST /api/scenario` accepts deterministic scenario timelines with elapsed millisecond steps.
+- [x] `GET /api/scenario` exposes active timeline state, step index, elapsed time, and configured steps.
+- [x] Timeline transitions record lab events.
+- [x] Timeline steps reuse existing scenario validation, targeting, and duration rules.
+- [x] Posting a normal scenario object clears an active timeline.
+
 ## Next High-Value Slices
 
 - Promote metadata-only profiles to trace-backed non-spec behavior after sanitized traces or pcaps are documented.
-- Developer ergonomics: SSE event stream, scripted scenario timeline, `satip-lab-smoke --json`, multi-server discovery.
+- Developer ergonomics: SSE event stream, `satip-lab-smoke --json`, multi-server discovery.
 
 ## Non-goals
 
