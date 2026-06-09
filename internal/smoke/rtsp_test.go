@@ -93,6 +93,9 @@ func TestProbeRTSPRTPRecordsJSONEvidence(t *testing.T) {
 	if doc.RTSP[0].Headers["Session"] == "" || doc.RTSP[0].Headers["Transport"] == "" {
 		t.Fatalf("setup headers: %#v", doc.RTSP[0].Headers)
 	}
+	if !strings.Contains(doc.RTSP[0].Headers["Session"], doc.SessionID) || !strings.Contains(doc.RTSP[0].Headers["Session"], "timeout=") {
+		t.Fatalf("setup Session header should preserve observed parameters: %#v", doc.RTSP[0].Headers["Session"])
+	}
 	if doc.RTSP[1].Method != "PLAY" || !strings.Contains(doc.RTSP[1].StatusLine, "200 OK") {
 		t.Fatalf("play evidence: %#v", doc.RTSP[1])
 	}

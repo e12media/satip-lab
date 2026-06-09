@@ -141,7 +141,8 @@ func ProbeRTSPRTP(ctx context.Context, opts RTSPProbeOptions) (RTSPProbeResult, 
 	if !strings.Contains(setup, "200 OK") {
 		return RTSPProbeResult{}, fmt.Errorf("SETUP failed: %s", strings.TrimSpace(setup))
 	}
-	sessionID := setupExchange.Headers["Session"]
+	sessionHeader := setupExchange.Headers["Session"]
+	sessionID := sessionIDFromResponse("Session: " + sessionHeader)
 	if sessionID == "" {
 		sessionID = sessionIDFromResponse(setup)
 	}
@@ -180,10 +181,13 @@ func ProbeRTSPRTP(ctx context.Context, opts RTSPProbeOptions) (RTSPProbeResult, 
 		return RTSPProbeResult{}, fmt.Errorf("unexpected MPEG-TS sync byte 0x%x", buf[12])
 	}
 
-	teardownExchange, _ := rtspExchangeEvidence(conn, "TEARDOWN", fmt.Sprintf(
+	teardownExchange, err := rtspExchangeEvidence(conn, "TEARDOWN", fmt.Sprintf(
 		"TEARDOWN rtsp://%s:%d/ RTSP/1.0\r\nCSeq: 3\r\nSession: %s\r\n\r\n",
 		opts.Host, opts.Port, sessionID,
 	))
+	if err != nil {
+		return RTSPProbeResult{}, fmt.Errorf("TEARDOWN failed: %w", err)
+	}
 
 	return RTSPProbeResult{
 		SessionID:       sessionID,
@@ -252,9 +256,6 @@ func parseRTSPExchange(method, response string) RTSPExchange {
 		}
 		key := strings.TrimSpace(line[:idx])
 		value := strings.TrimSpace(line[idx+1:])
-		if strings.EqualFold(key, "Session") {
-			value = sessionIDFromResponse(key + ": " + value)
-		}
 		exchange.Headers[key] = value
 	}
 	return exchange
