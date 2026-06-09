@@ -46,6 +46,7 @@ Returns a coding-agent bootstrap document with advertised URLs, test environment
     "frontend_telemetry": true,
     "hardware_status": true,
     "multi_server_topology": true,
+    "playback_observability": true,
     "rtsp_interleaved_tcp": true,
     "rtsp_rtp_smoke": true,
     "runtime_scenarios": true,
@@ -270,11 +271,15 @@ retry tests rather than real RF measurement.
 
 ## `GET /api/sessions`
 
-Returns active RTSP lab sessions.
+Returns active RTSP lab sessions. Session objects include RTP packet and byte
+counters, and add timing/transport fields as their corresponding lifecycle
+events occur: RTSP `SETUP`, RTSP `PLAY`, and successful RTP sends.
 
 ## `GET /api/events`
 
-Returns recent lab events such as `session_setup`, `play_started`, `session_closed`, `tuner_busy`, and `reset`.
+Returns recent lab events such as `session_setup`, `play_started`,
+`rtp_first_packet_sent`, bounded `rtp_packet_progress`, `session_closed`,
+`tuner_busy`, and `reset`.
 
 ## `GET /api/scenario`
 

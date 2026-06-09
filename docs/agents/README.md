@@ -40,7 +40,7 @@ The response includes:
 - Self-contained EPG evidence URLs, including `urls.xmltv` and `urls.clock`.
 - Ready-to-use client test environment variables.
 - Catalog source, catalog size, bundled fixture path, and a sample RTSP tune URL.
-- Feature flags for custom catalogs, compatibility evidence tooling, compatibility profiles, DVB SI basics, XMLTV, EIT present/following, frontend lifecycle, frontend telemetry, hardware-style status, multi-server topology fixtures, RTSP interleaved TCP, RTSP/RTP smoke, and runtime scenarios.
+- Feature flags for custom catalogs, compatibility evidence tooling, compatibility profiles, DVB SI basics, XMLTV, EIT present/following, frontend lifecycle, frontend telemetry, hardware-style status, multi-server topology fixtures, playback observability, RTSP interleaved TCP, RTSP/RTP smoke, and runtime scenarios.
 - Runtime profile name from `runtime.profile`.
 - Compatibility profile names and corpus path from `compatibility`.
 - Runtime scenario names and whether they can be scoped by `service_id` or `mux_id`.
@@ -74,6 +74,12 @@ When `features.multi_server_topology` is true, use `urls.topology` to fetch
 deterministic multi-device fixtures. In CI, prefer explicit endpoints from
 `/api/topology` and `SATIP_LAB_SSDP_PORT=0` because multicast discovery is often
 not available.
+
+When `features.playback_observability` is true, active `/api/sessions` entries
+include RTP packet and byte counters, and add RTSP setup/play timestamps,
+RTP first/last sent timestamps, transport, and destination as those lifecycle
+events occur. Use these fields to compare server-side first RTP send time with
+client-observed first RTP receive time.
 
 ## Catalog-Aware Tests
 

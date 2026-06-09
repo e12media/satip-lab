@@ -276,8 +276,12 @@ func (s *Server) handleSetupWithState(conn net.Conn, req request, cseq string, s
 		rtpChannel:    transport.rtpChannel,
 		rtspConn:      conn,
 		onStreamError: s.closeSessionAfterConnectionLoss,
-		service:       setup.Service,
+		onPacketSent: func(byteCount int) {
+			_ = s.lab.RecordRTPSent(sessionID, byteCount)
+		},
+		service: setup.Service,
 	}
+	_ = s.lab.SetRTPTransport(sessionID, transport.apiName(), transport.apiDestination(sess.clientIP))
 	if state != nil {
 		sess.rtspWriteMu = &state.writeMu
 		state.rememberSession(sessionID)
@@ -602,6 +606,7 @@ type session struct {
 	rtspConn      net.Conn
 	rtspWriteMu   *sync.Mutex
 	onStreamError func(string)
+	onPacketSent  func(int)
 	service       lab.Service
 
 	streamMu sync.Mutex
@@ -696,7 +701,9 @@ func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider,
 						if jitter := behavior.jitterFor(packetNumber); jitter > 0 {
 							time.Sleep(jitter)
 						}
-						_ = sender.Send(conn, dest, chunk)
+						if err := sender.Send(conn, dest, chunk); err == nil && s.onPacketSent != nil {
+							s.onPacketSent(12 + len(chunk))
+						}
 						behaviorSent++
 						if behavior.packetLimit > 0 && behaviorSent >= behavior.packetLimit {
 							s.finishStreaming(conn, stopCh)
@@ -771,6 +778,9 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 								s.onStreamError(s.id)
 							}
 							return
+						}
+						if s.onPacketSent != nil {
+							s.onPacketSent(len(frame) - 4)
 						}
 						behaviorSent++
 						if behavior.packetLimit > 0 && behaviorSent >= behavior.packetLimit {
@@ -968,6 +978,20 @@ func (t transportSpec) destination(remoteIP net.IP) net.IP {
 		return t.destinationIP
 	}
 	return remoteIP
+}
+
+func (t transportSpec) apiName() string {
+	if t.mode == transportInterleaved {
+		return "interleaved_tcp"
+	}
+	return "udp"
+}
+
+func (t transportSpec) apiDestination(destinationIP net.IP) string {
+	if t.mode == transportInterleaved {
+		return fmt.Sprintf("interleaved=%d-%d", t.rtpChannel, t.rtcpChannel)
+	}
+	return fmt.Sprintf("%s:%d", destinationIP.String(), t.rtpPort)
 }
 
 func (s *Server) setupSessionHeader(sessionID string) string {

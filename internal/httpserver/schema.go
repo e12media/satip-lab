@@ -1,6 +1,6 @@
 package httpserver
 
-const APISchemaVersion = "1.8"
+const APISchemaVersion = "1.9"
 
 type APISchema struct {
 	Version   string              `json:"version"`
@@ -53,7 +53,7 @@ func Schema() APISchema {
 			{Name: "topology_device", Fields: []string{"id", "friendly_name", "profile", "public_host", "http_port", "rtsp_port", "tuners", "location", "stale_location", "description_path"}},
 			{Name: "tuner", Fields: []string{"id", "state", "mux_id", "sessions", "frontend"}},
 			{Name: "frontend", Fields: []string{"state", "signal_strength", "snr_db", "ber", "per", "lock_ms", "last_lock_change"}},
-			{Name: "session", Fields: []string{"id", "state", "tuner_id", "service_id", "service", "mux_id", "pids", "pids_all", "client", "created_at", "updated_at"}},
+			{Name: "session", Fields: []string{"id", "state", "tuner_id", "service_id", "service", "mux_id", "pids", "pids_all", "client", "created_at", "updated_at", "rtsp_setup_accepted_at", "rtsp_play_accepted_at", "first_rtp_sent_at", "last_rtp_sent_at", "rtp_packet_count", "rtp_byte_count", "rtp_transport", "rtp_destination"}},
 			{Name: "event", Fields: []string{"at", "type", "session_id", "tuner_id", "service_id", "mux_id", "message"}},
 			{Name: "scenario", Fields: []string{"name", "description", "service_id", "mux_id", "duration_min", "timeline"}},
 			{Name: "scenario_timeline", Fields: []string{"active", "step_index", "elapsed_ms", "steps"}},
