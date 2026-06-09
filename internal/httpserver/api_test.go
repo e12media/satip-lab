@@ -212,6 +212,54 @@ func TestAPIStatusHardwareLifecycleUpdatesAfterTeardown(t *testing.T) {
 	}
 }
 
+func TestAPISessionsExposePlaybackObservabilityFields(t *testing.T) {
+	labManager := lab.NewManager(lab.DefaultCatalog(), 1)
+	if _, err := labManager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "192.0.2.10"); err != nil {
+		t.Fatal(err)
+	}
+	if err := labManager.SetRTPTransport("sess-1", "udp", "192.0.2.10:5004"); err != nil {
+		t.Fatal(err)
+	}
+	play, err := labManager.Play("sess-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := labManager.RecordRTPSentAt("sess-1", 1328, play.Session.UpdatedAt.Add(10*time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	handler := httpserver.New(config.Config{}, labManager).Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/sessions status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got []struct {
+		RTSPSetupAcceptedAt string `json:"rtsp_setup_accepted_at"`
+		RTSPPlayAcceptedAt  string `json:"rtsp_play_accepted_at"`
+		FirstRTPSentAt      string `json:"first_rtp_sent_at"`
+		LastRTPSentAt       string `json:"last_rtp_sent_at"`
+		RTPPacketCount      int    `json:"rtp_packet_count"`
+		RTPByteCount        int    `json:"rtp_byte_count"`
+		RTPTransport        string `json:"rtp_transport"`
+		RTPDestination      string `json:"rtp_destination"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("sessions: %+v", got)
+	}
+	if got[0].RTSPSetupAcceptedAt == "" || got[0].RTSPPlayAcceptedAt == "" || got[0].FirstRTPSentAt == "" || got[0].LastRTPSentAt == "" {
+		t.Fatalf("playback timestamps: %+v", got[0])
+	}
+	if got[0].RTPPacketCount != 1 || got[0].RTPByteCount != 1328 || got[0].RTPTransport != "udp" || got[0].RTPDestination != "192.0.2.10:5004" {
+		t.Fatalf("playback counters: %+v", got[0])
+	}
+}
+
 func TestStatusPageRendersHardwareSurface(t *testing.T) {
 	labManager := lab.NewManager(lab.DefaultCatalog(), 1)
 	if _, err := labManager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "192.0.2.10"); err != nil {
@@ -350,7 +398,7 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 	if got.Catalog.Source != "built_in" || got.Catalog.CatalogPath != "" || got.Catalog.FixturePath != "fixtures/astra-19.2e-dach.yaml" {
 		t.Fatalf("catalog source: %+v", got.Catalog)
 	}
-	for _, feature := range []string{"custom_catalogs", "compatibility_evidence", "compatibility_profiles", "dvb_si_basics", "xmltv_epg", "eit_present_following", "frontend_lifecycle", "multi_server_topology", "rtsp_interleaved_tcp", "rtsp_rtp_smoke", "runtime_scenarios", "scenario_timelines"} {
+	for _, feature := range []string{"custom_catalogs", "compatibility_evidence", "compatibility_profiles", "dvb_si_basics", "xmltv_epg", "eit_present_following", "frontend_lifecycle", "multi_server_topology", "playback_observability", "rtsp_interleaved_tcp", "rtsp_rtp_smoke", "runtime_scenarios", "scenario_timelines"} {
 		if !got.Features[feature] {
 			t.Fatalf("missing feature %q in %+v", feature, got.Features)
 		}
@@ -732,7 +780,7 @@ func TestAPISchema(t *testing.T) {
 		"topology_device":        {"id", "friendly_name", "profile", "public_host", "http_port", "rtsp_port", "tuners", "location", "stale_location", "description_path"},
 		"tuner":                  {"id", "state", "mux_id", "sessions", "frontend"},
 		"frontend":               {"state", "signal_strength", "snr_db", "ber", "per", "lock_ms", "last_lock_change"},
-		"session":                {"id", "state", "tuner_id", "service_id", "service", "mux_id", "pids", "pids_all", "client", "created_at", "updated_at"},
+		"session":                {"id", "state", "tuner_id", "service_id", "service", "mux_id", "pids", "pids_all", "client", "created_at", "updated_at", "rtsp_setup_accepted_at", "rtsp_play_accepted_at", "first_rtp_sent_at", "last_rtp_sent_at", "rtp_packet_count", "rtp_byte_count", "rtp_transport", "rtp_destination"},
 		"event":                  {"at", "type", "session_id", "tuner_id", "service_id", "mux_id", "message"},
 		"clock":                  {"mode", "now", "tz"},
 		"scenario":               {"name", "description", "service_id", "mux_id", "duration_min", "timeline"},

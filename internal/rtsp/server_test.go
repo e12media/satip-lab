@@ -713,6 +713,70 @@ func TestStartStreamingStopsAfterPacketLimit(t *testing.T) {
 	}
 }
 
+func TestUDPStreamingUpdatesPlaybackTimingAndCounters(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, manager)
+	rtpConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rtpConn.Close()
+	rtpPort := rtpConn.LocalAddr().(*net.UDPAddr).Port
+	sessionID := setupTestSessionWithRTPPort(t, server, rtpPort)
+
+	play := server.handlePlay(request{headers: map[string]string{"session": sessionID}}, "2")
+	if !strings.Contains(play, "200 OK") {
+		t.Fatalf("PLAY failed: %s", play)
+	}
+	defer server.handleTeardown(request{headers: map[string]string{"session": sessionID}}, "3")
+
+	buf := make([]byte, 2048)
+	_ = rtpConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	n, _, err := rtpConn.ReadFromUDP(buf)
+	if err != nil {
+		t.Fatalf("expected RTP packet: %v", err)
+	}
+
+	session := manager.Status().Sessions[0]
+	if session.RTPTransport != "udp" || session.RTPDestination != "127.0.0.1:"+strconv.Itoa(rtpPort) {
+		t.Fatalf("rtp destination fields: %+v", session)
+	}
+	if session.RTSPSetupAcceptedAt == nil || session.RTSPPlayAcceptedAt == nil || session.FirstRTPSentAt == nil || session.LastRTPSentAt == nil {
+		t.Fatalf("missing playback timestamps: %+v", session)
+	}
+	if session.RTPPacketCount < 1 || session.RTPByteCount < n {
+		t.Fatalf("rtp counters: packet_n=%d session=%+v", n, session)
+	}
+}
+
+func TestInterleavedStreamingUpdatesPlaybackTimingAndCounters(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, manager)
+	conn := &fakeTCPConn{remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 55000}}
+	state := &connectionState{}
+	sessionID := setupInterleavedTestSessionWithState(t, server, conn, state)
+
+	play := server.handlePlayWithState(request{headers: map[string]string{"session": sessionID}}, "2", state)
+	if !strings.Contains(play, "200 OK") {
+		t.Fatalf("PLAY failed: %s", play)
+	}
+	state.runAfterWrite()
+	defer server.handleTeardownWithState(request{headers: map[string]string{"session": sessionID}}, "3", state)
+
+	frame := waitForInterleavedFrame(t, conn, 500*time.Millisecond)
+
+	session := manager.Status().Sessions[0]
+	if session.RTPTransport != "interleaved_tcp" || session.RTPDestination != "interleaved=0-1" {
+		t.Fatalf("rtp destination fields: %+v", session)
+	}
+	if session.RTSPSetupAcceptedAt == nil || session.RTSPPlayAcceptedAt == nil || session.FirstRTPSentAt == nil || session.LastRTPSentAt == nil {
+		t.Fatalf("missing playback timestamps: %+v", session)
+	}
+	if session.RTPPacketCount < 1 || session.RTPByteCount < len(frame)-4 {
+		t.Fatalf("rtp counters: frame=%d session=%+v", len(frame), session)
+	}
+}
+
 func TestColdBootScenarioDelaysResponses(t *testing.T) {
 	manager := lab.NewManager(lab.DefaultCatalog(), 1)
 	if err := manager.SetScenario(lab.ScenarioColdBoot); err != nil {
@@ -1238,6 +1302,11 @@ func setupTestSessionWithRTPPort(t *testing.T, server *Server, rtpPort int) stri
 
 func setupInterleavedTestSession(t *testing.T, server *Server, conn *fakeTCPConn) string {
 	t.Helper()
+	return setupInterleavedTestSessionWithState(t, server, conn, &connectionState{})
+}
+
+func setupInterleavedTestSessionWithState(t *testing.T, server *Server, conn *fakeTCPConn, state *connectionState) string {
+	t.Helper()
 	setup := server.handleSetupWithState(
 		conn,
 		request{
@@ -1248,7 +1317,7 @@ func setupInterleavedTestSession(t *testing.T, server *Server, conn *fakeTCPConn
 			},
 		},
 		"1",
-		&connectionState{},
+		state,
 	)
 	if !strings.Contains(setup, "200 OK") {
 		t.Fatalf("SETUP failed: %s", setup)

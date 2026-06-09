@@ -128,6 +128,7 @@ func buildAgentContext(cfg config.Config, manager *lab.Manager) AgentContext {
 			"frontend_telemetry":     true,
 			"hardware_status":        true,
 			"multi_server_topology":  true,
+			"playback_observability": true,
 			"rtsp_interleaved_tcp":   true,
 			"rtsp_rtp_smoke":         true,
 			"runtime_scenarios":      true,

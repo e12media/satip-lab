@@ -42,17 +42,25 @@ type SetupResult struct {
 }
 
 type Session struct {
-	ID        string    `json:"id"`
-	State     string    `json:"state"`
-	TunerID   int       `json:"tuner_id"`
-	ServiceID string    `json:"service_id"`
-	Service   string    `json:"service"`
-	MuxID     string    `json:"mux_id"`
-	PIDs      []int     `json:"pids,omitempty"`
-	PIDsAll   bool      `json:"pids_all,omitempty"`
-	Client    string    `json:"client"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID                  string     `json:"id"`
+	State               string     `json:"state"`
+	TunerID             int        `json:"tuner_id"`
+	ServiceID           string     `json:"service_id"`
+	Service             string     `json:"service"`
+	MuxID               string     `json:"mux_id"`
+	PIDs                []int      `json:"pids,omitempty"`
+	PIDsAll             bool       `json:"pids_all,omitempty"`
+	Client              string     `json:"client"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
+	RTSPSetupAcceptedAt *time.Time `json:"rtsp_setup_accepted_at,omitempty"`
+	RTSPPlayAcceptedAt  *time.Time `json:"rtsp_play_accepted_at,omitempty"`
+	FirstRTPSentAt      *time.Time `json:"first_rtp_sent_at,omitempty"`
+	LastRTPSentAt       *time.Time `json:"last_rtp_sent_at,omitempty"`
+	RTPPacketCount      int        `json:"rtp_packet_count"`
+	RTPByteCount        int        `json:"rtp_byte_count"`
+	RTPTransport        string     `json:"rtp_transport,omitempty"`
+	RTPDestination      string     `json:"rtp_destination,omitempty"`
 }
 
 type Tuner struct {
@@ -215,17 +223,18 @@ func (m *Manager) Setup(sessionID, rawQuery, client string) (SetupResult, error)
 	}
 
 	session := Session{
-		ID:        sessionID,
-		State:     "setup",
-		TunerID:   tunerID,
-		ServiceID: service.ID,
-		Service:   service.Name,
-		MuxID:     mux.ID,
-		PIDs:      pids,
-		PIDsAll:   pidsAll,
-		Client:    client,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:                  sessionID,
+		State:               "setup",
+		TunerID:             tunerID,
+		ServiceID:           service.ID,
+		Service:             service.Name,
+		MuxID:               mux.ID,
+		PIDs:                pids,
+		PIDsAll:             pidsAll,
+		Client:              client,
+		CreatedAt:           now,
+		UpdatedAt:           now,
+		RTSPSetupAcceptedAt: timePtr(now),
 	}
 	m.sessions[sessionID] = session
 	m.addSessionToTunerLocked(tunerID, sessionID)
@@ -245,11 +254,54 @@ func (m *Manager) Play(sessionID string) (SetupResult, error) {
 	}
 	service, _ := m.catalog.ServiceByID(session.ServiceID)
 	mux, _ := m.catalog.MuxByID(session.MuxID)
+	playAcceptedAt := time.Now().UTC()
 	session.State = "playing"
-	session.UpdatedAt = time.Now().UTC()
+	session.UpdatedAt = playAcceptedAt
+	session.RTSPPlayAcceptedAt = timePtr(playAcceptedAt)
 	m.sessions[sessionID] = session
 	m.recordLocked(Event{Type: "play_started", SessionID: sessionID, TunerID: session.TunerID, ServiceID: service.ID, MuxID: mux.ID})
 	return SetupResult{Session: session, Service: service, Mux: mux, TunerID: session.TunerID}, nil
+}
+
+func (m *Manager) SetRTPTransport(sessionID, transport, destination string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	session, ok := m.sessions[sessionID]
+	if !ok {
+		return ErrSessionNotFound
+	}
+	session.RTPTransport = transport
+	session.RTPDestination = destination
+	m.sessions[sessionID] = session
+	return nil
+}
+
+func (m *Manager) RecordRTPSent(sessionID string, byteCount int) error {
+	return m.RecordRTPSentAt(sessionID, byteCount, time.Now().UTC())
+}
+
+func (m *Manager) RecordRTPSentAt(sessionID string, byteCount int, sentAt time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	session, ok := m.sessions[sessionID]
+	if !ok {
+		return ErrSessionNotFound
+	}
+	sentAt = sentAt.UTC()
+	if session.FirstRTPSentAt == nil {
+		session.FirstRTPSentAt = timePtr(sentAt)
+		m.recordLocked(Event{Type: "rtp_first_packet_sent", SessionID: sessionID, TunerID: session.TunerID, ServiceID: session.ServiceID, MuxID: session.MuxID})
+	}
+	session.LastRTPSentAt = timePtr(sentAt)
+	session.RTPPacketCount++
+	session.RTPByteCount += byteCount
+	if session.RTPPacketCount%100 == 0 {
+		m.recordLocked(Event{Type: "rtp_packet_progress", SessionID: sessionID, TunerID: session.TunerID, ServiceID: session.ServiceID, MuxID: session.MuxID, Message: strconv.Itoa(session.RTPPacketCount)})
+	}
+	m.sessions[sessionID] = session
+	return nil
 }
 
 func (m *Manager) Pause(sessionID string) error {
@@ -943,6 +995,10 @@ func lockedFrontend(now time.Time) TunerFrontend {
 
 func idleFrontend() TunerFrontend {
 	return TunerFrontend{State: FrontendIdle}
+}
+
+func timePtr(t time.Time) *time.Time {
+	return &t
 }
 
 func defaultLockDuration() time.Duration {

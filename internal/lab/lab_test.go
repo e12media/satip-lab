@@ -94,6 +94,53 @@ func TestManagerReleasesTunerOnTeardown(t *testing.T) {
 	}
 }
 
+func TestManagerTracksPlaybackTimingAndRTPStats(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	setup, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.SetRTPTransport("sess-1", "udp", "127.0.0.1:5004"); err != nil {
+		t.Fatal(err)
+	}
+	play, err := manager.Play("sess-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstRTP := play.Session.UpdatedAt.Add(10 * time.Millisecond)
+	lastRTP := firstRTP.Add(990 * time.Millisecond)
+
+	if err := manager.RecordRTPSentAt("sess-1", 1400, firstRTP); err != nil {
+		t.Fatal(err)
+	}
+	for i := 2; i <= 100; i++ {
+		if err := manager.RecordRTPSentAt("sess-1", 1400, firstRTP.Add(time.Duration(i-1)*10*time.Millisecond)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	status := manager.Status()
+	if len(status.Sessions) != 1 {
+		t.Fatalf("sessions: %+v", status.Sessions)
+	}
+	session := status.Sessions[0]
+	if session.RTSPSetupAcceptedAt == nil || !session.RTSPSetupAcceptedAt.Equal(setup.Session.CreatedAt) {
+		t.Fatalf("setup accepted timestamp: %+v setup=%s", session.RTSPSetupAcceptedAt, setup.Session.CreatedAt)
+	}
+	if session.RTSPPlayAcceptedAt == nil || !session.RTSPPlayAcceptedAt.Equal(play.Session.UpdatedAt) {
+		t.Fatalf("play accepted timestamp: %+v play=%s", session.RTSPPlayAcceptedAt, play.Session.UpdatedAt)
+	}
+	if session.FirstRTPSentAt == nil || !session.FirstRTPSentAt.Equal(firstRTP) || session.LastRTPSentAt == nil || !session.LastRTPSentAt.Equal(lastRTP) {
+		t.Fatalf("rtp timestamps: first=%+v last=%+v", session.FirstRTPSentAt, session.LastRTPSentAt)
+	}
+	if session.RTPPacketCount != 100 || session.RTPByteCount != 140000 || session.RTPTransport != "udp" || session.RTPDestination != "127.0.0.1:5004" {
+		t.Fatalf("rtp stats: %+v", session)
+	}
+	if len(status.Events) < 3 || status.Events[len(status.Events)-2].Type != "rtp_first_packet_sent" || status.Events[len(status.Events)-1].Type != "rtp_packet_progress" {
+		t.Fatalf("rtp events: %+v", status.Events)
+	}
+}
+
 func TestManagerReportsFrontendLifecycleAfterSetup(t *testing.T) {
 	manager := lab.NewManager(lab.DefaultCatalog(), 1)
 
