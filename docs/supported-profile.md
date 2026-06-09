@@ -167,7 +167,8 @@ See `docs/api.md` for request/response shapes.
 - Sessions on different muxes consume separate tuners.
 - `GET /api/tuners` and `GET /api/status` expose deterministic synthetic frontend telemetry for each tuner: `state`, `signal_strength`, `snr_db`, `ber`, `per`, `lock_ms`, and `last_lock_change`.
 - `GET /api/status` also includes a nested lab-only `hardware` block with uptime, profile-aware identity metadata, stream counts, tuner counts, and simple network counters.
-- Normal tuned frontends report `state=locked`; `signal_degraded`, `lock_loss`, and `slow_lock` provide deterministic RF-like status variants for client UI and retry tests.
+- Normal `SETUP` moves a tuner through `state=tuning` to `state=locked` after a deterministic 250 ms lock window. Same-mux sessions share the same frontend lifecycle.
+- `signal_degraded`, `lock_loss`, and `slow_lock` provide deterministic RF-like status variants for client UI and retry tests. Timeline recovery from `lock_loss` reports `state=recovering` for the normal lock window before returning to locked.
 - `TEARDOWN` releases the session and frees a tuner once no sessions remain on its mux.
 - Lab state and active RTP senders are kept in memory and reset on process restart or `POST /api/reset`.
 - `POST /api/scenario` changes the runtime lab scenario; unknown names return `400` and leave the scenario unchanged.

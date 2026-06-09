@@ -169,7 +169,7 @@ func TestAPIStatusIncludesHardwareSurface(t *testing.T) {
 	if got.Hardware.Tuners.Total != 2 || got.Hardware.Tuners.InUse != 1 || got.Hardware.Tuners.Idle != 1 {
 		t.Fatalf("hardware tuners: %+v", got.Hardware.Tuners)
 	}
-	if got.Hardware.Network.HTTPPort != 8875 || got.Hardware.Network.RTSPPort != 554 || got.Hardware.Network.RTSPSessions != 1 || got.Hardware.Network.RTPStreams != 1 || got.Hardware.Network.FrontendLocks != 1 || got.Hardware.Network.RecentEvents == 0 {
+	if got.Hardware.Network.HTTPPort != 8875 || got.Hardware.Network.RTSPPort != 554 || got.Hardware.Network.RTSPSessions != 1 || got.Hardware.Network.RTPStreams != 1 || got.Hardware.Network.FrontendLocks != 0 || got.Hardware.Network.RecentEvents == 0 {
 		t.Fatalf("hardware network counters: %+v", got.Hardware.Network)
 	}
 }
@@ -227,7 +227,7 @@ func TestStatusPageRendersHardwareSurface(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET / status: got %d body=%s", rec.Code, body)
 	}
-	for _, want := range []string{"Hardware status", "TVHeadend SAT&gt;IP", "Active streams", "Frontend state", "locked", "/api/status"} {
+	for _, want := range []string{"Hardware status", "TVHeadend SAT&gt;IP", "Active streams", "Frontend state", "tuning", "/api/status"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("status page missing %q:\n%s", want, body)
 		}
@@ -342,7 +342,7 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 	if got.Catalog.Source != "built_in" || got.Catalog.CatalogPath != "" || got.Catalog.FixturePath != "fixtures/astra-19.2e-dach.yaml" {
 		t.Fatalf("catalog source: %+v", got.Catalog)
 	}
-	for _, feature := range []string{"custom_catalogs", "compatibility_profiles", "xmltv_epg", "eit_present_following", "rtsp_interleaved_tcp", "rtsp_rtp_smoke", "runtime_scenarios", "scenario_timelines"} {
+	for _, feature := range []string{"custom_catalogs", "compatibility_profiles", "xmltv_epg", "eit_present_following", "frontend_lifecycle", "rtsp_interleaved_tcp", "rtsp_rtp_smoke", "runtime_scenarios", "scenario_timelines"} {
 		if !got.Features[feature] {
 			t.Fatalf("missing feature %q in %+v", feature, got.Features)
 		}

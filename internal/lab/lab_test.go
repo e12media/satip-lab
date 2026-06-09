@@ -94,22 +94,84 @@ func TestManagerReleasesTunerOnTeardown(t *testing.T) {
 	}
 }
 
-func TestManagerReportsLockedFrontendTelemetryAfterSetup(t *testing.T) {
+func TestManagerReportsFrontendLifecycleAfterSetup(t *testing.T) {
 	manager := lab.NewManager(lab.DefaultCatalog(), 1)
 
-	if _, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1"); err != nil {
+	setup, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1")
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	frontend := manager.Status().Tuners[0].Frontend
+	frontend := manager.StatusAt(setup.Session.CreatedAt).Tuners[0].Frontend
+	if frontend.State != lab.FrontendTuning {
+		t.Fatalf("frontend should tune before lock acquisition, got %q", frontend.State)
+	}
+	if frontend.LockMS != 250 || frontend.LastLockChange == nil || !frontend.LastLockChange.Equal(setup.Session.CreatedAt) {
+		t.Fatalf("tuning telemetry: %+v start=%s", frontend, setup.Session.CreatedAt)
+	}
+
+	frontend = manager.StatusAt(setup.Session.CreatedAt.Add(250 * time.Millisecond)).Tuners[0].Frontend
 	if frontend.State != lab.FrontendLocked {
 		t.Fatalf("frontend state: got %q", frontend.State)
 	}
 	if frontend.SignalStrength != 88 || frontend.SNRDB != 13.5 || frontend.BER != 0 || frontend.PER != 0 {
 		t.Fatalf("locked telemetry: %+v", frontend)
 	}
-	if frontend.LockMS != 250 || frontend.LastLockChange == nil || frontend.LastLockChange.IsZero() {
+	if frontend.LockMS != 250 || frontend.LastLockChange == nil || !frontend.LastLockChange.Equal(setup.Session.CreatedAt.Add(250*time.Millisecond)) {
 		t.Fatalf("lock timing: %+v", frontend)
+	}
+}
+
+func TestSameMuxSharingPreservesFrontendLifecycle(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+
+	first, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := manager.Setup("sess-2", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5200,5201,5202", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.TunerID != first.TunerID {
+		t.Fatalf("expected same mux to share tuner: first=%d second=%d", first.TunerID, second.TunerID)
+	}
+
+	frontend := manager.StatusAt(first.Session.CreatedAt.Add(100 * time.Millisecond)).Tuners[0].Frontend
+	if frontend.State != lab.FrontendTuning {
+		t.Fatalf("same-mux sharing should not reset or skip frontend lifecycle: %+v", frontend)
+	}
+	if frontend.LastLockChange == nil || !frontend.LastLockChange.Equal(first.Session.CreatedAt) {
+		t.Fatalf("same-mux sharing should preserve first tune start: %+v first=%s second=%s", frontend, first.Session.CreatedAt, second.Session.CreatedAt)
+	}
+}
+
+func TestTimelineLockLossRecoversFrontendLifecycle(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	setup, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := setup.Session.CreatedAt.Add(250 * time.Millisecond)
+	if err := manager.SetScenarioTimelineAt([]lab.ScenarioTimelineStep{
+		{AtMS: 0, Name: lab.ScenarioLockLoss},
+		{AtMS: 1000, Name: lab.ScenarioNormal},
+	}, start); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := manager.StatusAt(start.Add(500 * time.Millisecond)).Tuners[0].Frontend.State; got != lab.FrontendLost {
+		t.Fatalf("timeline lock loss state: got %q", got)
+	}
+	recovering := manager.StatusAt(start.Add(1100 * time.Millisecond)).Tuners[0].Frontend
+	if recovering.State != lab.FrontendRecovering {
+		t.Fatalf("expected recovering after lock_loss clears, got %+v", recovering)
+	}
+	if recovering.LastLockChange == nil || !recovering.LastLockChange.Equal(start.Add(1000*time.Millisecond)) {
+		t.Fatalf("recovering lock timing: %+v", recovering)
+	}
+	if got := manager.StatusAt(start.Add(1300 * time.Millisecond)).Tuners[0].Frontend.State; got != lab.FrontendLocked {
+		t.Fatalf("expected locked after recovery window, got %q", got)
 	}
 }
 
@@ -164,14 +226,15 @@ func TestTargetedSignalScenarioOnlyChangesMatchingMuxTelemetry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1"); err != nil {
+	first, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := manager.Setup("sess-2", "src=1&freq=11362&pol=h&msys=dvbs2&sr=22000&pids=0,17,6100,6110,6120", "127.0.0.1"); err != nil {
 		t.Fatal(err)
 	}
 
-	status := manager.Status()
+	status := manager.StatusAt(first.Session.CreatedAt.Add(250 * time.Millisecond))
 	if status.Tuners[0].Frontend.State != lab.FrontendLocked {
 		t.Fatalf("non-targeted tuner should remain locked: %+v", status.Tuners[0])
 	}
@@ -182,10 +245,11 @@ func TestTargetedSignalScenarioOnlyChangesMatchingMuxTelemetry(t *testing.T) {
 
 func TestRuntimeSignalScenarioUpdatesActiveTunerTelemetry(t *testing.T) {
 	manager := lab.NewManager(lab.DefaultCatalog(), 1)
-	if _, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1"); err != nil {
+	setup, err := manager.Setup("sess-1", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if got := manager.Status().Tuners[0].Frontend.State; got != lab.FrontendLocked {
+	if got := manager.StatusAt(setup.Session.CreatedAt.Add(250 * time.Millisecond)).Tuners[0].Frontend.State; got != lab.FrontendLocked {
 		t.Fatalf("initial frontend state: got %q", got)
 	}
 
@@ -199,7 +263,7 @@ func TestRuntimeSignalScenarioUpdatesActiveTunerTelemetry(t *testing.T) {
 	if err := manager.SetScenario(lab.ScenarioNormal); err != nil {
 		t.Fatal(err)
 	}
-	if got := manager.Status().Tuners[0].Frontend.State; got != lab.FrontendLocked {
+	if got := manager.StatusAt(setup.Session.CreatedAt.Add(250 * time.Millisecond)).Tuners[0].Frontend.State; got != lab.FrontendLocked {
 		t.Fatalf("restoring normal should update active tuner telemetry, got %q", got)
 	}
 }
@@ -209,7 +273,8 @@ func TestServiceTargetedTelemetryIsStableForSameMuxSharing(t *testing.T) {
 	if err := manager.SetScenarioTarget(lab.ScenarioSignalDegraded, "arte-hd", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := manager.Setup("sess-arte", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5200,5201,5202", "127.0.0.1"); err != nil {
+	setup, err := manager.Setup("sess-arte", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5200,5201,5202", "127.0.0.1")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := manager.Setup("sess-daserste", "src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,5100,5101,5102", "127.0.0.1"); err != nil {
@@ -222,7 +287,7 @@ func TestServiceTargetedTelemetryIsStableForSameMuxSharing(t *testing.T) {
 	}
 
 	manager.Teardown("sess-arte")
-	status = manager.Status()
+	status = manager.StatusAt(setup.Session.CreatedAt.Add(250 * time.Millisecond))
 	if status.Tuners[0].Frontend.State != lab.FrontendLocked {
 		t.Fatalf("shared tuner should return locked after targeted service leaves: %+v", status.Tuners[0])
 	}

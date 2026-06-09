@@ -110,7 +110,7 @@ Deferred from v0.2:
 ## v1.8 RF/Tuner Telemetry V1
 
 - [x] `/api/tuners` and `/api/status` expose deterministic frontend telemetry for each tuner.
-- [x] Normal tuned frontends report locked state, synthetic signal strength, SNR, BER/PER, lock timing, and last lock transition.
+- [x] Normal tuned frontends report synthetic signal strength, SNR, BER/PER, lock timing, and last lock transition.
 - [x] `signal_degraded`, `lock_loss`, and `slow_lock` scenarios provide deterministic RF-like status variants.
 - [x] RF telemetry scenarios support `service_id` and `mux_id` targeting.
 - [x] RTSP setup/play behavior remains unchanged for telemetry-only scenarios.
@@ -137,6 +137,14 @@ Deferred from v0.2:
 - [x] The minimal HTML status page exposes the same hardware-like state for humans.
 - [x] `/api/agent/context` advertises `hardware_status`.
 - [x] API schema version `1.7` documents the hardware status models.
+
+## v1.12 Frontend/Tuner Lifecycle V2
+
+- [x] Frontend telemetry models deterministic lifecycle states: `idle`, `tuning`, `locked`, `degraded`, `lost`, and `recovering`.
+- [x] `SETUP` allocates a tuner in `state=tuning`; normal status reports `state=locked` after a deterministic 250 ms lock window.
+- [x] Same-mux session sharing preserves the shared frontend lifecycle instead of restarting lock acquisition.
+- [x] Scenario timelines can drive lock loss and recovery without changing default RTSP success behavior.
+- [x] `/api/agent/context` advertises `frontend_lifecycle`.
 
 ## Digital Twin Roadmap
 
