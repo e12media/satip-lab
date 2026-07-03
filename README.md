@@ -164,6 +164,7 @@ Makefile                test, run, docker-up, smoke
 | [docs/api.md](docs/api.md) | Lab API endpoints and example payloads |
 | [docs/catalog.md](docs/catalog.md) | YAML catalog format and bundled larger fixture |
 | [docs/compatibility/servers.md](docs/compatibility/servers.md) | Compatibility corpus and profile evidence levels |
+| [docs/compatibility/cross-implementation.md](docs/compatibility/cross-implementation.md) | Optional validation against independent SAT>IP implementations |
 | [docs/epg.md](docs/epg.md) | Deterministic XMLTV EPG contract |
 | [docs/vendor-profiles/](docs/vendor-profiles/) | RTSP profile contract and evidence policy |
 | [docs/supported-profile.md](docs/supported-profile.md) | What is / isn't simulated |

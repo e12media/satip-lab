@@ -572,6 +572,9 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 	if len(got.Docs) == 0 || got.Docs[0].Path != "docs/agents/README.md" {
 		t.Fatalf("docs: %+v", got.Docs)
 	}
+	if !agentDocsContain(got.Docs, "docs/compatibility/cross-implementation.md") {
+		t.Fatalf("docs should include cross-implementation validation guide: %+v", got.Docs)
+	}
 	for _, hint := range []string{"codex/", "container", "Open a PR", "PR review", "Re-run relevant tests", "Publish containers and merge only"} {
 		if !containsStringWith(got.RecommendedChecks, hint) {
 			t.Fatalf("recommended checks should include %q workflow hint: %+v", hint, got.RecommendedChecks)
@@ -1130,6 +1133,18 @@ func writeTempFile(t *testing.T, name, body string) string {
 func containsStringWith(items []string, want string) bool {
 	for _, item := range items {
 		if strings.Contains(item, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func agentDocsContain(docs []struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}, path string) bool {
+	for _, doc := range docs {
+		if doc.Path == path {
 			return true
 		}
 	}

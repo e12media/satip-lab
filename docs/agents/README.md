@@ -119,6 +119,10 @@ Profiles affect SSDP headers and `LOCATION`, device XML identity/path, advertise
 trace-backed RTSP knobs. Metadata-only profiles intentionally keep spec-compatible
 RTSP behavior. See `docs/compatibility/servers.md`.
 
+For cross-implementation client validation, use
+`docs/compatibility/cross-implementation.md` and keep those jobs optional until
+the independent SAT>IP server setup is stable for the client repository.
+
 ## Scenario Recipes
 
 | Scenario | Use it to test |

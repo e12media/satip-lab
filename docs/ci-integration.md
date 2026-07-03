@@ -252,6 +252,14 @@ docker compose run --rm client-tests
 
 Replace `./run-client-tests` with your client test command. If your client test image does not include `curl`, add an equivalent wait helper or make the test entrypoint poll `SATIP_TEST_HTTP_URL` before opening RTSP sessions.
 
+## Cross-implementation validation
+
+Use the optional recipe in `docs/compatibility/cross-implementation.md` when a
+client repository should compare behavior against `satip-lab` and an independent
+SAT>IP server such as minisatip or SatPI. Keep that job separate from the normal
+deterministic `satip-lab` gate until the independent server setup is stable for
+the client.
+
 ## Build image in CI (this repo)
 
 See `.github/workflows/ci.yml` — builds the image, curls endpoints after `docker run`, and verifies RTSP/RTP packet delivery.
