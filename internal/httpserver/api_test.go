@@ -523,7 +523,7 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 	if got.Catalog.Source != "built_in" || got.Catalog.CatalogPath != "" || got.Catalog.FixturePath != "fixtures/astra-19.2e-dach.yaml" {
 		t.Fatalf("catalog source: %+v", got.Catalog)
 	}
-	for _, feature := range []string{"custom_catalogs", "compatibility_evidence", "compatibility_profiles", "dvb_si_basics", "xmltv_epg", "eit_present_following", "frontend_lifecycle", "multi_server_topology", "playback_diagnostics", "playback_observability", "rtsp_interleaved_tcp", "rtsp_rtp_smoke", "runtime_scenarios", "scenario_timelines"} {
+	for _, feature := range []string{"custom_catalogs", "compatibility_evidence", "compatibility_profiles", "dvb_si_basics", "xmltv_epg", "eit_present_following", "frontend_lifecycle", "multi_server_topology", "playback_diagnostics", "playback_observability", "rtcp_app_status", "rtsp_interleaved_tcp", "rtsp_rtp_smoke", "runtime_scenarios", "scenario_timelines"} {
 		if !got.Features[feature] {
 			t.Fatalf("missing feature %q in %+v", feature, got.Features)
 		}
@@ -562,7 +562,7 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 		if scenario.Name == lab.ScenarioRTPLoss && !strings.Contains(scenario.ClientExpectationHint, "every third") {
 			t.Fatalf("rtp_loss expectation hint: %+v", scenario)
 		}
-		if scenario.Name == lab.ScenarioSignalDegraded && !strings.Contains(scenario.ClientExpectationHint, "frontend.state=degraded") {
+		if scenario.Name == lab.ScenarioSignalDegraded && (!strings.Contains(scenario.ClientExpectationHint, "frontend.state=degraded") || !strings.Contains(scenario.ClientExpectationHint, "RTCP APP")) {
 			t.Fatalf("signal_degraded expectation hint: %+v", scenario)
 		}
 		if scenario.Name == lab.ScenarioSignalRecovery && !strings.Contains(scenario.ClientExpectationHint, "frontend.state=recovering") {

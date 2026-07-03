@@ -4,6 +4,9 @@ HTTP_HOST ?= 127.0.0.1
 HTTP_PORT ?= 8875
 RTSP_HOST ?= 127.0.0.1
 RTSP_PORT ?= 554
+RTP_BIND ?= 0.0.0.0
+RTP_DESTINATION ?=
+RTP_DESTINATION_ARG := $(if $(RTP_DESTINATION),--rtp-destination $(RTP_DESTINATION),)
 
 test:
 	go test ./...
@@ -32,5 +35,5 @@ docker-down:
 smoke:
 	curl -fsS http://$(HTTP_HOST):$(HTTP_PORT)/desc.xml | grep -q 'SatIPServer'
 	curl -fsS http://$(HTTP_HOST):$(HTTP_PORT)/channels.m3u | grep -q 'ZDF HD'
-	go run ./cmd/satip-lab-smoke --host $(RTSP_HOST) --rtsp-port $(RTSP_PORT)
+	go run ./cmd/satip-lab-smoke --host $(RTSP_HOST) --rtsp-port $(RTSP_PORT) --rtp-bind $(RTP_BIND) $(RTP_DESTINATION_ARG)
 	@echo "smoke OK"

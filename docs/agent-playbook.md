@@ -23,6 +23,7 @@ Use this flow for agent-authored implementation work:
    make smoke
    make docker-down
    ```
+   On Docker Desktop or another NAT-backed runtime, use `make smoke RTP_DESTINATION=<host-ip-from-container>` when RTP cannot return through the inferred RTSP peer address.
 5. Open a PR with test output, container smoke evidence when applicable, and client-facing compatibility notes.
 6. Request or spawn a PR review pass. Implement actionable review issues only after verifying they are correct.
 7. Re-run `make test`, `make lint`, and the container smoke path again when that path was required.

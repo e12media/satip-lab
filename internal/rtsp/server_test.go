@@ -692,7 +692,7 @@ func TestStartStreamingStopsAfterPacketLimit(t *testing.T) {
 		return payload
 	}, NewRTPSender(), func() streamBehavior {
 		return streamBehavior{packetLimit: 2}
-	})
+	}, nil)
 	defer sess.stopStreaming()
 
 	buf := make([]byte, 2048)
@@ -1188,6 +1188,172 @@ func TestPlayUsesContinuityErrorScenarioPayload(t *testing.T) {
 	}
 }
 
+func TestPlaySendsRTCPAppStatusToNegotiatedUDPPort(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	if err := manager.SetScenario(lab.ScenarioSignalDegraded); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, manager)
+	rtpConn, rtcpConn, rtpPort := listenUDPPortPair(t)
+	defer rtpConn.Close()
+	defer rtcpConn.Close()
+
+	sessionID := setupTestSessionWithRTPPort(t, server, rtpPort)
+	defer server.handleTeardown(request{headers: map[string]string{"session": sessionID}}, "3")
+	play := server.handlePlay(request{headers: map[string]string{"session": sessionID}}, "2")
+	if !strings.Contains(play, "200 OK") {
+		t.Fatalf("PLAY failed: %s", play)
+	}
+
+	packet := readUDPPacket(t, rtcpConn, 500*time.Millisecond)
+	status := rtcpStatusStringFromPacket(t, packet)
+	for _, want := range []string{"ver=1.2", "src=1", "tuner=1,42,1", "pids=0,17,5100,5101,5102"} {
+		if !strings.Contains(status, want) {
+			t.Fatalf("RTCP status missing %q: %q", want, status)
+		}
+	}
+}
+
+func TestInterleavedPlaySendsRTCPAppStatusOnRTCPChannel(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	if err := manager.SetScenario(lab.ScenarioSignalDegraded); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, manager)
+	conn := &fakeTCPConn{remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 55000}}
+	sessionID := setupInterleavedTestSession(t, server, conn)
+	defer server.handleTeardown(request{headers: map[string]string{"session": sessionID}}, "3")
+
+	play := server.handlePlay(request{headers: map[string]string{"session": sessionID}}, "2")
+	if !strings.Contains(play, "200 OK") {
+		t.Fatalf("PLAY failed: %s", play)
+	}
+
+	frame := waitForInterleavedFrameOnChannel(t, conn, 1, 700*time.Millisecond)
+	status := rtcpStatusStringFromPacket(t, frame[4:])
+	if !strings.Contains(status, "tuner=1,42,1") {
+		t.Fatalf("interleaved RTCP status should include degraded tuner state: %q", status)
+	}
+}
+
+func TestPauseStopsRTCPDelivery(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, manager)
+	rtpConn, rtcpConn, rtpPort := listenUDPPortPair(t)
+	defer rtpConn.Close()
+	defer rtcpConn.Close()
+
+	sessionID := setupTestSessionWithRTPPort(t, server, rtpPort)
+	play := server.handlePlay(request{headers: map[string]string{"session": sessionID}}, "2")
+	if !strings.Contains(play, "200 OK") {
+		t.Fatalf("PLAY failed: %s", play)
+	}
+	_ = readUDPPacket(t, rtcpConn, 500*time.Millisecond)
+
+	pause := server.handlePause(request{headers: map[string]string{"session": sessionID}}, "3")
+	if !strings.Contains(pause, "200 OK") {
+		t.Fatalf("PAUSE failed: %s", pause)
+	}
+	buf := make([]byte, 2048)
+	_ = rtcpConn.SetReadDeadline(time.Now().Add(250 * time.Millisecond))
+	if n, _, err := rtcpConn.ReadFromUDP(buf); err == nil {
+		t.Fatalf("expected RTCP to stop after PAUSE, got %d bytes: % x", n, buf[:n])
+	}
+}
+
+func TestRTCPStatusForSessionMapsFrontendTelemetry(t *testing.T) {
+	tests := []struct {
+		name         string
+		scenario     string
+		wait         time.Duration
+		wantLevel    int
+		wantLock     int
+		wantQuality0 bool
+	}{
+		{
+			name:      "normal locked frontend",
+			scenario:  lab.ScenarioNormal,
+			wait:      260 * time.Millisecond,
+			wantLevel: 88,
+			wantLock:  1,
+		},
+		{
+			name:      "degraded signal",
+			scenario:  lab.ScenarioSignalDegraded,
+			wantLevel: 42,
+			wantLock:  1,
+		},
+		{
+			name:         "lost lock",
+			scenario:     lab.ScenarioLockLoss,
+			wantLevel:    0,
+			wantLock:     0,
+			wantQuality0: true,
+		},
+		{
+			name:         "slow lock still tuning",
+			scenario:     lab.ScenarioSlowLock,
+			wantLevel:    55,
+			wantLock:     0,
+			wantQuality0: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			manager := lab.NewManager(lab.DefaultCatalog(), 1)
+			if err := manager.SetScenario(tc.scenario); err != nil {
+				t.Fatal(err)
+			}
+			server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, manager)
+			sessionID := setupTestSession(t, server)
+			if tc.wait > 0 {
+				time.Sleep(tc.wait)
+			}
+
+			status, ok := server.rtcpStatusForSession(sessionID)
+			if !ok {
+				t.Fatal("expected RTCP status for active session")
+			}
+			if status.SourceID != 1 || status.TunerID != 1 || status.Frequency != 11494 || status.Polarity != "h" || status.DeliverySystem != "dvbs2" || status.SymbolRate != 22000 {
+				t.Fatalf("tuning fields: %+v", status)
+			}
+			if status.Level != tc.wantLevel || status.Lock != tc.wantLock {
+				t.Fatalf("frontend status: got level=%d lock=%d want level=%d lock=%d", status.Level, status.Lock, tc.wantLevel, tc.wantLock)
+			}
+			if tc.wantQuality0 && status.Quality != 0 {
+				t.Fatalf("unlocked quality should be 0: %+v", status)
+			}
+			if !tc.wantQuality0 && status.Quality <= 0 {
+				t.Fatalf("locked quality should be positive: %+v", status)
+			}
+		})
+	}
+}
+
+func TestRTCPStatusReflectsUpdatedSessionPIDs(t *testing.T) {
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	server := NewServer(config.Config{PublicHost: "127.0.0.1"}, &ts.Source{}, manager)
+	sessionID := setupTestSession(t, server)
+	defer server.handleTeardown(request{headers: map[string]string{"session": sessionID}}, "3")
+
+	play := server.handlePlay(request{
+		uri:     "rtsp://127.0.0.1/?addpids=900",
+		headers: map[string]string{"session": sessionID},
+	}, "2")
+	if !strings.Contains(play, "200 OK") {
+		t.Fatalf("PLAY failed: %s", play)
+	}
+
+	status, ok := server.rtcpStatusForSession(sessionID)
+	if !ok {
+		t.Fatal("expected RTCP status for active session")
+	}
+	if status.PIDs != "0,17,900,5100,5101,5102" {
+		t.Fatalf("RTCP status PIDs: got %q", status.PIDs)
+	}
+}
+
 func TestPlayPayloadSkipsScenarioWhenTargetDoesNotMatch(t *testing.T) {
 	manager := lab.NewManager(lab.DefaultCatalog(), 1)
 	if err := manager.SetScenarioTarget(lab.ScenarioContinuityErrors, "zdf-hd", ""); err != nil {
@@ -1385,11 +1551,19 @@ func setupInterleavedTestSessionWithState(t *testing.T, server *Server, conn *fa
 
 func waitForInterleavedFrame(t *testing.T, conn *fakeTCPConn, timeout time.Duration) []byte {
 	t.Helper()
+	return waitForInterleavedFrameOnChannel(t, conn, 0, timeout)
+}
+
+func waitForInterleavedFrameOnChannel(t *testing.T, conn *fakeTCPConn, channel int, timeout time.Duration) []byte {
+	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		writes := conn.writtenBytes()
 		for offset := 0; offset+4 <= len(writes); offset++ {
 			if writes[offset] != '$' {
+				continue
+			}
+			if channel >= 0 && int(writes[offset+1]) != channel {
 				continue
 			}
 			length := int(binary.BigEndian.Uint16(writes[offset+2 : offset+4]))
@@ -1400,8 +1574,51 @@ func waitForInterleavedFrame(t *testing.T, conn *fakeTCPConn, timeout time.Durat
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for interleaved frame; writes=%#v", conn.writtenBytes())
+	writes := conn.writtenBytes()
+	t.Fatalf("timed out waiting for interleaved frame on channel %d; write_len=%d head=% x", channel, len(writes), writes[:min(len(writes), 96)])
 	return nil
+}
+
+func listenUDPPortPair(t *testing.T) (*net.UDPConn, *net.UDPConn, int) {
+	t.Helper()
+	for attempt := 0; attempt < 25; attempt++ {
+		rtpConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rtpPort := rtpConn.LocalAddr().(*net.UDPAddr).Port
+		rtcpConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: rtpPort + 1})
+		if err == nil {
+			return rtpConn, rtcpConn, rtpPort
+		}
+		_ = rtpConn.Close()
+	}
+	t.Fatal("could not allocate consecutive UDP RTP/RTCP test ports")
+	return nil, nil, 0
+}
+
+func readUDPPacket(t *testing.T, conn *net.UDPConn, timeout time.Duration) []byte {
+	t.Helper()
+	buf := make([]byte, 2048)
+	_ = conn.SetReadDeadline(time.Now().Add(timeout))
+	n, _, err := conn.ReadFromUDP(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append([]byte(nil), buf[:n]...)
+}
+
+func rtcpStatusStringFromPacket(t *testing.T, packet []byte) string {
+	t.Helper()
+	app := rtcpSectionByType(t, packet, rtcpPacketTypeApp)
+	if len(app) < 16 || string(app[8:12]) != rtcpAppNameSATIP {
+		t.Fatalf("missing SAT>IP APP section: % x", app)
+	}
+	statusLen := int(binary.BigEndian.Uint16(app[14:16]))
+	if 16+statusLen > len(app) {
+		t.Fatalf("invalid SAT>IP APP status length %d for section %d", statusLen, len(app))
+	}
+	return string(app[16 : 16+statusLen])
 }
 
 func startRTSPTestServer(t *testing.T, manager *lab.Manager) *Server {

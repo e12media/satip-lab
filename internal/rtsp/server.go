@@ -26,6 +26,7 @@ const slowRTSPDelay = 250 * time.Millisecond
 const coldBootDelay = 750 * time.Millisecond
 const delayedPSIStartupDelay = 80 * time.Millisecond
 const rtspSessionTimeout = 60 * time.Second
+const defaultRTCPStatusInterval = 200 * time.Millisecond
 
 type Server struct {
 	cfg           config.Config
@@ -274,6 +275,8 @@ func (s *Server) handleSetupWithState(conn net.Conn, req request, cseq string, s
 		clientRTCPort: transport.rtcpPort,
 		transport:     transport.mode,
 		rtpChannel:    transport.rtpChannel,
+		rtcpChannel:   transport.rtcpChannel,
+		rtcpInterval:  s.rtcpStatusInterval(),
 		rtspConn:      conn,
 		onStreamError: s.closeSessionAfterConnectionLoss,
 		onPacketSent: func(byteCount int) {
@@ -356,7 +359,7 @@ func (s *Server) handlePlayWithState(req request, cseq string, state *connection
 	start := func() {
 		sess.startStreaming(payloadProvider, NewRTPSender(), func() streamBehavior {
 			return s.streamBehavior(setup.Service, setup.Mux)
-		})
+		}, s.rtcpPacketProvider(sessionID))
 	}
 	if state != nil && sess.transport == transportInterleaved {
 		state.afterResponse(start)
@@ -423,6 +426,105 @@ func (s *Server) streamBehavior(service lab.Service, mux lab.Mux) streamBehavior
 	default:
 		return streamBehavior{}
 	}
+}
+
+func (s *Server) rtcpStatusForSession(sessionID string) (RTCPStatus, bool) {
+	status := s.lab.Status()
+	var session lab.Session
+	foundSession := false
+	for _, candidate := range status.Sessions {
+		if candidate.ID == sessionID {
+			session = candidate
+			foundSession = true
+			break
+		}
+	}
+	if !foundSession {
+		return RTCPStatus{}, false
+	}
+
+	var tuner lab.Tuner
+	foundTuner := false
+	for _, candidate := range status.Tuners {
+		if candidate.ID == session.TunerID {
+			tuner = candidate
+			foundTuner = true
+			break
+		}
+	}
+	if !foundTuner {
+		return RTCPStatus{}, false
+	}
+
+	mux, ok := s.lab.Catalog().MuxByID(session.MuxID)
+	if !ok {
+		return RTCPStatus{}, false
+	}
+	lock := rtcpLockFromFrontend(tuner.Frontend.State)
+	return RTCPStatus{
+		SourceID:       mux.Src,
+		TunerID:        tuner.ID,
+		Level:          tuner.Frontend.SignalStrength,
+		Lock:           lock,
+		Quality:        rtcpQualityFromFrontend(tuner.Frontend, lock),
+		Frequency:      mux.Frequency,
+		Polarity:       strings.ToLower(mux.Polarization),
+		DeliverySystem: strings.ToLower(mux.Delivery),
+		SymbolRate:     mux.SymbolRate,
+		PIDs:           rtcpPIDsFromSession(session),
+	}, true
+}
+
+func (s *Server) rtcpPacketProvider(sessionID string) rtcpPacketProvider {
+	sender := NewRTCPStatusSender()
+	return func() ([]byte, bool) {
+		status, ok := s.rtcpStatusForSession(sessionID)
+		if !ok {
+			return nil, false
+		}
+		return sender.Packet(status), true
+	}
+}
+
+func (s *Server) rtcpStatusInterval() time.Duration {
+	if s.vendorProfile.RTCPStatusInterval > 0 {
+		return s.vendorProfile.RTCPStatusInterval
+	}
+	return defaultRTCPStatusInterval
+}
+
+func rtcpLockFromFrontend(state string) int {
+	switch state {
+	case lab.FrontendLocked, lab.FrontendDegraded, lab.FrontendRecovering:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func rtcpQualityFromFrontend(frontend lab.TunerFrontend, lock int) int {
+	if lock == 0 {
+		return 0
+	}
+	quality := int(frontend.SNRDB + 0.5)
+	if quality < 1 {
+		return 1
+	}
+	if quality > 15 {
+		return 15
+	}
+	return quality
+}
+
+func rtcpPIDsFromSession(session lab.Session) string {
+	if session.PIDsAll {
+		return "all"
+	}
+	parts := make([]string, 0, len(session.PIDs))
+	for _, pid := range session.PIDs {
+		parts = append(parts, strconv.Itoa(pid))
+	}
+	return strings.Join(parts, ",")
 }
 
 func (s *Server) playPayload(profile ts.ServiceProfile, service lab.Service, mux lab.Mux) ([]byte, error) {
@@ -611,6 +713,8 @@ type session struct {
 	clientRTCPort int
 	transport     transportMode
 	rtpChannel    int
+	rtcpChannel   int
+	rtcpInterval  time.Duration
 	rtspConn      net.Conn
 	rtspWriteMu   *sync.Mutex
 	onStreamError func(string)
@@ -635,6 +739,8 @@ type streamPayloadProvider func() []byte
 
 type streamBehaviorProvider func() streamBehavior
 
+type rtcpPacketProvider func() ([]byte, bool)
+
 func (b streamBehavior) shouldDrop(packetNumber int) bool {
 	if b.dropAll {
 		return true
@@ -649,19 +755,19 @@ func (b streamBehavior) jitterFor(packetNumber int) time.Duration {
 	return 0
 }
 
-func (s *session) startStreaming(payloadProvider streamPayloadProvider, sender *RTPSender, behaviorProvider streamBehaviorProvider) {
+func (s *session) startStreaming(payloadProvider streamPayloadProvider, sender *RTPSender, behaviorProvider streamBehaviorProvider, rtcpProvider rtcpPacketProvider) {
 	s.streamMu.Lock()
 	defer s.streamMu.Unlock()
 	s.stopStreamingLocked()
 
 	if s.transport == transportInterleaved {
-		s.startInterleavedStreamingLocked(payloadProvider, sender, behaviorProvider)
+		s.startInterleavedStreamingLocked(payloadProvider, sender, behaviorProvider, rtcpProvider)
 		return
 	}
-	s.startUDPStreamingLocked(payloadProvider, sender, behaviorProvider)
+	s.startUDPStreamingLocked(payloadProvider, sender, behaviorProvider, rtcpProvider)
 }
 
-func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider, sender *RTPSender, behaviorProvider streamBehaviorProvider) {
+func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider, sender *RTPSender, behaviorProvider streamBehaviorProvider, rtcpProvider rtcpPacketProvider) {
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
 	if err != nil {
 		return
@@ -671,6 +777,7 @@ func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider,
 	s.stopCh = stopCh
 
 	dest := &net.UDPAddr{IP: s.clientIP, Port: s.clientRTPPort}
+	rtcpDest := &net.UDPAddr{IP: s.clientIP, Port: s.clientRTCPort}
 	source := &ts.Source{}
 
 	go func() {
@@ -680,6 +787,7 @@ func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider,
 		behaviorPacketNumber := 0
 		var lastBehavior streamBehavior
 		var behaviorStartedAt time.Time
+		var nextRTCP time.Time
 		ticker := time.NewTicker(10 * time.Millisecond)
 		defer ticker.Stop()
 		for {
@@ -687,6 +795,11 @@ func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider,
 			case <-stopCh:
 				return
 			case <-ticker.C:
+				now := time.Now()
+				if rtcpDest.Port > 0 && rtcpDue(now, nextRTCP) {
+					sendUDPRTCP(conn, rtcpDest, rtcpProvider)
+					nextRTCP = now.Add(s.statusInterval())
+				}
 				behavior := streamBehavior{}
 				if behaviorProvider != nil {
 					behavior = behaviorProvider()
@@ -695,9 +808,9 @@ func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider,
 					behaviorSent = 0
 					behaviorPacketNumber = 0
 					lastBehavior = behavior
-					behaviorStartedAt = time.Now()
+					behaviorStartedAt = now
 				}
-				if behavior.startupDelay > 0 && time.Since(behaviorStartedAt) < behavior.startupDelay {
+				if behavior.startupDelay > 0 && now.Sub(behaviorStartedAt) < behavior.startupDelay {
 					continue
 				}
 				payload := payloadProvider()
@@ -727,7 +840,7 @@ func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider,
 	}()
 }
 
-func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadProvider, sender *RTPSender, behaviorProvider streamBehaviorProvider) {
+func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadProvider, sender *RTPSender, behaviorProvider streamBehaviorProvider, rtcpProvider rtcpPacketProvider) {
 	if s.rtspConn == nil {
 		return
 	}
@@ -747,6 +860,7 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 		behaviorPacketNumber := 0
 		var lastBehavior streamBehavior
 		var behaviorStartedAt time.Time
+		var nextRTCP time.Time
 		ticker := time.NewTicker(10 * time.Millisecond)
 		defer ticker.Stop()
 		for {
@@ -754,6 +868,17 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 			case <-stopCh:
 				return
 			case <-ticker.C:
+				now := time.Now()
+				if rtcpDue(now, nextRTCP) {
+					if err := s.writeInterleavedRTCP(writeMu, rtcpProvider); err != nil {
+						s.finishInterleavedStreaming(stopCh)
+						if s.onStreamError != nil {
+							s.onStreamError(s.id)
+						}
+						return
+					}
+					nextRTCP = now.Add(s.statusInterval())
+				}
 				behavior := streamBehavior{}
 				if behaviorProvider != nil {
 					behavior = behaviorProvider()
@@ -762,9 +887,9 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 					behaviorSent = 0
 					behaviorPacketNumber = 0
 					lastBehavior = behavior
-					behaviorStartedAt = time.Now()
+					behaviorStartedAt = now
 				}
-				if behavior.startupDelay > 0 && time.Since(behaviorStartedAt) < behavior.startupDelay {
+				if behavior.startupDelay > 0 && now.Sub(behaviorStartedAt) < behavior.startupDelay {
 					continue
 				}
 				payload := payloadProvider()
@@ -803,6 +928,43 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 			}
 		}
 	}()
+}
+
+func rtcpDue(now, next time.Time) bool {
+	return next.IsZero() || !now.Before(next)
+}
+
+func (s *session) statusInterval() time.Duration {
+	if s.rtcpInterval > 0 {
+		return s.rtcpInterval
+	}
+	return defaultRTCPStatusInterval
+}
+
+func sendUDPRTCP(conn *net.UDPConn, dest *net.UDPAddr, provider rtcpPacketProvider) {
+	if provider == nil {
+		return
+	}
+	packet, ok := provider()
+	if !ok || len(packet) == 0 {
+		return
+	}
+	_, _ = conn.WriteToUDP(packet, dest)
+}
+
+func (s *session) writeInterleavedRTCP(writeMu *sync.Mutex, provider rtcpPacketProvider) error {
+	if provider == nil {
+		return nil
+	}
+	packet, ok := provider()
+	if !ok || len(packet) == 0 {
+		return nil
+	}
+	frame := interleavedFrame(s.rtcpChannel, packet)
+	writeMu.Lock()
+	_, err := s.rtspConn.Write(frame)
+	writeMu.Unlock()
+	return err
 }
 
 func (s *session) streamingActive() bool {

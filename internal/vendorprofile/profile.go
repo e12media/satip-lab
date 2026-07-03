@@ -1,6 +1,9 @@
 package vendorprofile
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 const (
 	NameGeneric      = "generic-satip-1.2"
@@ -41,6 +44,7 @@ type Profile struct {
 	IncludeSetupTimeout        bool
 	RequireDescribeBeforeSetup bool
 	TunerBusyStatus            string
+	RTCPStatusInterval         time.Duration
 }
 
 var genericProfile = Profile{
@@ -68,6 +72,7 @@ var genericProfile = Profile{
 	SessionIDFormat:     SessionIDNumeric,
 	IncludeSetupTimeout: true,
 	TunerBusyStatus:     "503 Service Unavailable",
+	RTCPStatusInterval:  200 * time.Millisecond,
 }
 
 var specProfile = withName(genericProfile, NameSpec)
