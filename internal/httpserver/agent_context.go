@@ -132,6 +132,7 @@ func buildAgentContext(cfg config.Config, manager *lab.Manager) AgentContext {
 			"multi_server_topology":  true,
 			"playback_diagnostics":   true,
 			"playback_observability": true,
+			"rtcp_app_status":        true,
 			"rtsp_interleaved_tcp":   true,
 			"rtsp_rtp_smoke":         true,
 			"runtime_scenarios":      true,
@@ -193,13 +194,13 @@ func scenarioExpectationHint(name string) string {
 	case lab.ScenarioMalformedPSI:
 		return "RTP and MPEG-TS packet framing remain valid, but PAT/PMT headers are corrupted; clients should surface PSI/parser evidence rather than transport failure."
 	case lab.ScenarioSignalDegraded:
-		return "RTSP SETUP and PLAY still succeed, while /api/tuners reports frontend.state=degraded with deterministic signal_strength=42, snr_db=6.5, ber=0.00025, and per=0.02."
+		return "RTSP SETUP and PLAY still succeed, while /api/tuners reports frontend.state=degraded and RTCP APP SES1 reports tuner level=42, lock=1 with deterministic signal/SNR degradation."
 	case lab.ScenarioLockLoss:
-		return "RTSP SETUP and PLAY still succeed, while /api/tuners reports frontend.state=lost with deterministic zero signal and high BER/PER for lock-loss UI and retry handling."
+		return "RTSP SETUP and PLAY still succeed, while /api/tuners reports frontend.state=lost and RTCP APP SES1 reports tuner level=0, lock=0 for lock-loss UI and retry handling."
 	case lab.ScenarioSignalRecovery:
-		return "RTSP SETUP and PLAY still succeed, while /api/tuners reports frontend.state=recovering before returning to locked after the deterministic lock window."
+		return "RTSP SETUP and PLAY still succeed, while /api/tuners reports frontend.state=recovering and RTCP APP SES1 exposes recovering tuner status before returning to locked after the deterministic lock window."
 	case lab.ScenarioSlowLock:
-		return "RTSP SETUP and PLAY still succeed, while /api/tuners reports frontend.state=tuning with lock_ms=1200 for slow-lock UI and timeout tolerance tests."
+		return "RTSP SETUP and PLAY still succeed, while /api/tuners reports frontend.state=tuning with lock_ms=1200 and RTCP APP SES1 reports lock=0 for slow-lock UI and timeout tolerance tests."
 	default:
 		return ""
 	}

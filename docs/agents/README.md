@@ -21,7 +21,7 @@ When changing this repository, use the default delivery workflow:
 1. Create or switch to a `codex/` branch before editing.
 2. Implement the smallest scoped change and add tests for behavior changes.
 3. Run `make test` and `make lint`.
-4. If runtime behavior, Docker, CI, media generation, or advertised lab contracts changed, run `make docker-up`, `make smoke`, and `make docker-down`.
+4. If runtime behavior, Docker, CI, media generation, or advertised lab contracts changed, run `make docker-up`, `make smoke`, and `make docker-down`. On Docker Desktop or another NAT-backed runtime, use `make smoke RTP_DESTINATION=<host-ip-from-container>` when RTP cannot return through the inferred RTSP peer address.
 5. Open a PR with verification evidence and client-facing compatibility notes.
 6. Request or spawn a PR review pass, implement confirmed review issues, then rerun relevant tests.
 7. Publish containers and merge only when explicitly requested by a maintainer or through the release workflow.
@@ -40,7 +40,7 @@ The response includes:
 - Self-contained EPG evidence URLs, including `urls.xmltv` and `urls.clock`.
 - Ready-to-use client test environment variables.
 - Catalog source, catalog size, bundled fixture path, and a sample RTSP tune URL.
-- Feature flags for custom catalogs, compatibility evidence tooling, compatibility profiles, DVB SI basics, XMLTV, EIT present/following, frontend lifecycle, frontend telemetry, hardware-style status, multi-server topology fixtures, playback observability, playback diagnostics, RTSP interleaved TCP, RTSP/RTP smoke, and runtime scenarios.
+- Feature flags for custom catalogs, compatibility evidence tooling, compatibility profiles, DVB SI basics, XMLTV, EIT present/following, frontend lifecycle, frontend telemetry, hardware-style status, multi-server topology fixtures, playback observability, playback diagnostics, RTCP APP status, RTSP interleaved TCP, RTSP/RTP smoke, and runtime scenarios.
 - Runtime profile name from `runtime.profile`.
 - Compatibility profile names and corpus path from `compatibility`.
 - Runtime scenario names and whether they can be scoped by `service_id` or `mux_id`.
@@ -52,6 +52,11 @@ When `features.frontend_lifecycle` is true, client tests can assert that normal
 `SETUP` reports `frontend.state=tuning` before the deterministic lock window
 elapses, then `frontend.state=locked`. Timeline recovery from `lock_loss` may
 report `frontend.state=recovering` before returning to locked.
+
+When `features.rtcp_app_status` is true, active `PLAY` sessions emit compound
+RTCP with SAT>IP APP `SES1` status on the negotiated UDP RTCP port or
+interleaved RTCP channel. Use this for client signal-quality and lock-state UI
+tests that need protocol-visible telemetry instead of lab API polling only.
 
 ## Recommended Client Test Flow
 
@@ -67,7 +72,8 @@ curl -fsS "$SATIP_TEST_HTTP_URL/epg/xmltv.xml" | grep -q "zdf.de"
 
 After basic HTTP checks, run the client project's own RTSP/RTP integration tests against `SATIP_TEST_RTSP_URL`.
 Clients that support TCP fallback can request `RTP/AVP/TCP;unicast;interleaved=0-1`
-in SETUP and assert `$`-framed RTP payload type 33 on the RTSP TCP connection.
+in SETUP and assert `$`-framed RTP payload type 33 on the RTSP TCP connection
+and RTCP APP `SES1` status on the paired RTCP interleaved channel.
 For guide clients that parse in-stream DVB data, include tests for synthetic EIT present/following on PID `0x0012`, SDT actual on PID `0x0011`, and NIT actual on PID `0x0010` when using generated TS.
 
 When `features.multi_server_topology` is true, use `urls.topology` to fetch
@@ -130,10 +136,10 @@ RTSP behavior. See `docs/compatibility/servers.md`.
 | `delayed_psi` | Startup parser tolerance; expect a deterministic gap before first PAT/PMT evidence arrives. |
 | `cc_errors` | MPEG-TS continuity-counter error handling. |
 | `malformed_psi` | PAT/PMT validation and error reporting. |
-| `signal_degraded` | Signal-quality UI and retry handling; expect `/api/tuners` frontend `state=degraded`. |
-| `lock_loss` | Lost-lock UI and recovery handling; expect `/api/tuners` frontend `state=lost`. |
-| `signal_recovery` | Missing-signal recovery UI; expect `/api/tuners` frontend `state=recovering` before locked. |
-| `slow_lock` | Slow-lock UI and timeout tolerance; expect `/api/tuners` frontend `state=tuning` and `lock_ms=1200`. |
+| `signal_degraded` | Signal-quality UI and retry handling; expect `/api/tuners` frontend `state=degraded` and RTCP APP level `42`, lock `1`. |
+| `lock_loss` | Lost-lock UI and recovery handling; expect `/api/tuners` frontend `state=lost` and RTCP APP lock `0`. |
+| `signal_recovery` | Missing-signal recovery UI; expect `/api/tuners` frontend `state=recovering` before locked; RTCP APP follows the same synthetic frontend state. |
+| `slow_lock` | Slow-lock UI and timeout tolerance; expect `/api/tuners` frontend `state=tuning`, `lock_ms=1200`, and RTCP APP lock `0`. |
 | `epg_gap` | Missing schedule windows. |
 | `epg_mismatch` | M3U/XMLTV channel id mismatch handling. |
 | `epg_stale` | Stale EPG refresh behavior. |

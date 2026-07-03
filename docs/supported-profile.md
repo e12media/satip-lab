@@ -202,6 +202,17 @@ See `docs/api.md` for request/response shapes.
 - If `SATIP_LAB_SAMPLE_PROFILE=h264_silent`, ZDF HD uses the same style of H.264 test pattern with silent AAC audio for audio-selection and muted-audio behavior tests.
 - If `SATIP_LAB_TS_PATH` points to a readable file, that file is looped for every service instead.
 
+## RTCP
+
+- Active `PLAY` sessions emit compound RTCP packets with Sender Report, SDES, and SAT>IP APP `SES1` status sections.
+- UDP sessions send RTCP to the negotiated RTCP client port, normally the second port from `client_port=<rtp>-<rtcp>`.
+- TCP interleaved sessions send RTCP as `$` frames on the negotiated RTCP interleaved channel.
+- RTCP status is emitted immediately after playback starts and then about every 200 ms by default while streaming remains active; compatibility profile metadata can tune the interval.
+- The APP status string uses deterministic lab telemetry: `ver=1.2;src=<src>;tuner=<id>,<level>,<lock>,<quality>,<freq>,<pol>,<msys>,<sr>;pids=<pids>`.
+- `level` comes from the synthetic frontend `signal_strength`; `lock` reflects frontend state; `quality` is a deterministic SNR-derived 0-15 value.
+- Runtime `signal_degraded`, `lock_loss`, `signal_recovery`, and `slow_lock` scenarios are visible through RTCP APP status as well as `/api/tuners`.
+- Incoming client RTCP receiver reports are not interpreted beyond keeping normal RTSP/RTP behavior deterministic.
+
 ## Lab model
 
 - `SATIP_LAB_TUNERS` controls the simulated tuner count.
@@ -241,6 +252,7 @@ Designed for SAT>IP client tests such as:
 - Tuner pool exhaustion and same-mux sharing (via lab + RTSP)
 - Frontend telemetry UI and retry handling through deterministic `/api/tuners` state
 - Hardware-style status UI and management surface checks through deterministic `/api/status` fields
+- RTCP APP tuner status parsing for signal-quality UI and lock-state handling
 - RTP MPEG-TS playback (distinct synthetic TS per service, one decodable ZDF HD sample profile, or one file via `SATIP_LAB_TS_PATH`)
 - Lab observability (`GET /api/status`, `/api/tuners`, `/api/events`)
 

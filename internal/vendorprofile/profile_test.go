@@ -3,6 +3,7 @@ package vendorprofile_test
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/e12media/satip-lab/internal/vendorprofile"
 )
@@ -30,6 +31,9 @@ func TestSpecProfileDefinesStrictSATIPBehavior(t *testing.T) {
 	}
 	if profile.TunerBusyStatus != "503 Service Unavailable" {
 		t.Fatalf("tuner busy status: got %q", profile.TunerBusyStatus)
+	}
+	if profile.RTCPStatusInterval != 200*time.Millisecond {
+		t.Fatalf("rtcp status interval: got %s", profile.RTCPStatusInterval)
 	}
 	if profile.Device.FriendlyName != "satip-lab" {
 		t.Fatalf("friendly name: got %q", profile.Device.FriendlyName)

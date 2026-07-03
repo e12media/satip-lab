@@ -41,10 +41,12 @@ Prefer these variables over hard-coded URLs in client tests.
 
 For larger catalog tests, use `SATIP_LAB_CATALOG=fixtures/astra-19.2e-dach.yaml` locally or `/app/fixtures/astra-19.2e-dach.yaml` in Docker. For topology/discovery-selection tests, use `SATIP_LAB_TOPOLOGY` and read `/api/topology`; in CI, prefer explicit endpoints with `SATIP_LAB_SSDP_PORT=0` over multicast discovery. For compatibility hardening, run the same client tests with `SATIP_LAB_PROFILE=tvheadend`, `SATIP_LAB_PROFILE=minisatip`, or another documented profile. For guide fallback tests, remember that generated synthetic TS includes DVB EIT present/following on PID `0x0012`.
 
+Active RTSP `PLAY` sessions also emit SAT>IP RTCP APP `SES1` tuner status on the negotiated UDP RTCP port or interleaved RTCP channel. Prefer that protocol path when testing client signal-quality UI, and use `/api/tuners` as deterministic assertion support.
+
 ## Agent Rules
 
 - Reset state between independent tests with `POST /api/reset`.
-- Use runtime scenarios for deterministic error cases, including frontend telemetry scenarios for signal-quality UI and retry tests.
+- Use runtime scenarios for deterministic error cases, including frontend telemetry scenarios for signal-quality UI and retry tests over both `/api/tuners` and RTCP APP status.
 - Use `/api/status.hardware` for lab-owned hardware-style uptime, identity, stream, tuner, and counter assertions; do not treat it as a vendor management API.
 - Use scenario timelines when a client test needs failure behavior to evolve over elapsed milliseconds.
 - Keep client application changes in the client repository.
