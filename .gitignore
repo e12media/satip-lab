@@ -10,3 +10,4 @@
 assets/sample.ts
 assets/h264_aac_short.ts
 assets/h264_silent.ts
+assets/media/*.ts

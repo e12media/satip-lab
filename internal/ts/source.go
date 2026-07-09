@@ -1,8 +1,10 @@
 package ts
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const chunkSize = 1316
@@ -16,6 +18,7 @@ const (
 
 type Source struct {
 	Path           string
+	MediaDir       string
 	SampleProfile  string
 	SampleAssetDir string
 }
@@ -37,10 +40,45 @@ func (s *Source) LoadServicePayloadWithOptions(profile ServiceProfile, eit EITOp
 	if err == nil && len(data) > 0 {
 		return data, nil
 	}
+	if media, ok, err := s.loadMediaDirPayload(profile); err != nil {
+		return nil, err
+	} else if ok {
+		return media, nil
+	}
 	if sampleName, ok := s.sampleAssetName(profile); ok {
 		return os.ReadFile(filepath.Join(s.sampleAssetDir(), sampleName))
 	}
 	return SyntheticServiceTransportWithOptions(profile, eit), nil
+}
+
+func (s *Source) loadMediaDirPayload(profile ServiceProfile) ([]byte, bool, error) {
+	if strings.TrimSpace(s.MediaDir) == "" {
+		return nil, false, nil
+	}
+	filename := serviceMediaFilename(profile.ID)
+	if filename == "" {
+		return nil, false, nil
+	}
+	path := filepath.Join(s.MediaDir, filename)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	if len(data) == 0 {
+		return nil, false, fmt.Errorf("media asset %q is empty", path)
+	}
+	return data, true, nil
+}
+
+func serviceMediaFilename(serviceID string) string {
+	id := strings.TrimSpace(serviceID)
+	if id == "" {
+		return ""
+	}
+	return filepath.Base(id) + ".ts"
 }
 
 func (s *Source) sampleAssetName(profile ServiceProfile) (string, bool) {

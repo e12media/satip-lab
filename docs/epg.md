@@ -97,7 +97,7 @@ The EIT scope is intentionally small:
 - `epg_gap` suppresses EIT p/f for the targeted service or mux.
 - `epg_mismatch` is XMLTV-only in v1.5.
 - `epg_stale` affects HTTP freshness only.
-- `SATIP_LAB_TS_PATH` and decodable sample profiles are served unchanged.
+- `SATIP_LAB_TS_PATH`, `SATIP_LAB_MEDIA_DIR`, and decodable sample profiles are served unchanged.
 
 ## Scenarios
 

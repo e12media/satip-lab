@@ -36,6 +36,17 @@ Local development with Compose:
 docker compose up --build
 ```
 
+If another SAT>IP server is already using the default host ports, publish the
+container on alternate host ports and advertise those same public ports:
+
+```bash
+SATIP_LAB_HTTP_PUBLISHED_PORT=18875 \
+SATIP_LAB_RTSP_PUBLISHED_PORT=1554 \
+SATIP_LAB_PUBLIC_HTTP_PORT=18875 \
+SATIP_LAB_PUBLIC_RTSP_PORT=1554 \
+docker compose up --build
+```
+
 Then configure your client:
 
 | Endpoint | URL |
@@ -52,6 +63,50 @@ Then configure your client:
 The bundled M3U lists five DACH-oriented test channels (Das Erste, ZDF, arte, 3sat, phoenix) with SAT>IP tuning query parameters aligned to common Astra 19.2°E presets. Set `SATIP_LAB_CATALOG=fixtures/astra-19.2e-dach.yaml` for a larger 25-service DACH fixture, or mount your own YAML catalog for UI/import scale tests.
 
 The lab model groups those services into muxes and allocates a configurable tuner pool. Services on the same mux can share a tuner; services on different muxes consume additional tuners. When no transport stream file exists, `satip-lab` generates distinct synthetic MPEG-TS payloads per service so client tests can tell channels apart. The Docker image defaults to `SATIP_LAB_SAMPLE_PROFILE=h264_aac_short`, which makes ZDF HD use a short decodable H.264/AAC MPEG-TS test pattern while the other services remain synthetic.
+
+### Custom video loops
+
+For visual playback tests, put playable MPEG-TS loops in a media directory using
+the service id as the filename:
+
+```text
+media/das-erste-hd.ts
+media/zdf-hd.ts
+media/arte-hd.ts
+```
+
+Generate a 30-second H.264/AAC loop from a local video. This example targets
+ZDF HD from the built-in catalog; inspect `/api/services` for the service id and
+PIDs of other services:
+
+```bash
+mkdir -p media
+SERVICE_ID=1002
+PMT_PID=6100
+VIDEO_PID=6110
+AUDIO_PID=6120
+
+ffmpeg -y -stream_loop -1 -i input.mp4 \
+  -t 30 \
+  -vf 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,fps=25,format=yuv420p' \
+  -c:v libx264 -preset veryfast -profile:v main -level 4.0 -b:v 2500k \
+  -c:a aac -b:a 128k -ar 48000 -ac 2 \
+  -streamid "0:${VIDEO_PID}" -streamid "1:${AUDIO_PID}" \
+  -mpegts_service_id "${SERVICE_ID}" -mpegts_pmt_start_pid "${PMT_PID}" \
+  -f mpegts \
+  media/zdf-hd.ts
+```
+
+Run with the media directory:
+
+```bash
+SATIP_LAB_MEDIA_DIR=media go run ./cmd/satip-lab
+```
+
+`SATIP_LAB_TS_PATH` still has highest priority and loops one file for every
+service. When `SATIP_LAB_MEDIA_DIR` is set, files named `<service-id>.ts` are
+used per service; missing services fall back to the selected sample profile or
+synthetic TS.
 
 ### Docker Desktop (macOS / Windows)
 
@@ -188,6 +243,7 @@ Makefile                test, run, docker-up, smoke
 | `SATIP_LAB_SSDP_PORT` | `1900` | SSDP UDP (`0` disables) |
 | `SATIP_LAB_CATALOG` | empty | Optional YAML channel catalog path; empty uses the built-in five-service DACH catalog |
 | `SATIP_LAB_TS_PATH` | empty | Optional MPEG-TS file to loop for all services; empty uses distinct generated TS per service |
+| `SATIP_LAB_MEDIA_DIR` | empty | Optional directory of per-service MPEG-TS loops named `<service-id>.ts`; missing files fall back to generated TS |
 | `SATIP_LAB_SAMPLE_PROFILE` | `synthetic` | Built-in service media profile when `SATIP_LAB_TS_PATH` is empty: `synthetic`, `h264_aac_short`, or `h264_silent` |
 | `SATIP_LAB_PROFILE` | `generic-satip-1.2` | Compatibility profile for SSDP, device XML path/metadata, M3U path, and RTSP behavior |
 | `SATIP_LAB_VENDOR_PROFILE` | `spec` | RTSP behavior profile selector alias; `SATIP_LAB_PROFILE` is preferred |

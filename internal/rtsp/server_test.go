@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -1110,6 +1112,30 @@ func TestPlayPayloadProviderObservesScenarioChanges(t *testing.T) {
 	changedPayload := payloadProvider()
 	if bytes.Equal(normalPayload, changedPayload) {
 		t.Fatal("expected payload provider to observe continuity error scenario change")
+	}
+}
+
+func TestPlayPayloadUsesPerServiceMediaDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "das-erste-hd.ts"), []byte("DAS-ERSTE-MEDIA"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manager := lab.NewManager(lab.DefaultCatalog(), 1)
+	server := NewServer(config.Config{PublicHost: "127.0.0.1", MediaDir: dir}, &ts.Source{MediaDir: dir}, manager)
+
+	payload, err := server.playPayload(ts.ServiceProfile{
+		ID:        "das-erste-hd",
+		Name:      "Das Erste HD",
+		ServiceID: 1001,
+		PMTPID:    5100,
+		VideoPID:  5101,
+		AudioPID:  5102,
+	}, lab.Service{ID: "das-erste-hd"}, lab.Mux{ID: "src1-11494h-22000-dvbs2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(payload) != "DAS-ERSTE-MEDIA" {
+		t.Fatalf("play payload should use per-service media asset, got %q", string(payload))
 	}
 }
 

@@ -26,7 +26,7 @@ type Simulator struct {
 }
 
 func New(cfg config.Config) (*Simulator, error) {
-	source := &ts.Source{Path: cfg.TransportStreamPath, SampleProfile: cfg.SampleProfile}
+	source := &ts.Source{Path: cfg.TransportStreamPath, MediaDir: cfg.MediaDir, SampleProfile: cfg.SampleProfile}
 	catalog := lab.DefaultCatalog()
 	if strings.TrimSpace(cfg.CatalogPath) != "" {
 		list, err := channels.LoadCatalogFile(cfg.CatalogPath)
