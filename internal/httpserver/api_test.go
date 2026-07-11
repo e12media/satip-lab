@@ -15,6 +15,7 @@ import (
 	"github.com/e12media/satip-lab/internal/httpserver"
 	"github.com/e12media/satip-lab/internal/lab"
 	"github.com/e12media/satip-lab/internal/topology"
+	"github.com/e12media/satip-lab/internal/ts"
 )
 
 func TestAPICatalogMuxesAndServices(t *testing.T) {
@@ -576,6 +577,29 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 		if !containsStringWith(got.RecommendedChecks, hint) {
 			t.Fatalf("recommended checks should include %q workflow hint: %+v", hint, got.RecommendedChecks)
 		}
+	}
+}
+
+func TestAPIAgentContextUsesDecodableZDFSample(t *testing.T) {
+	cfg := config.Config{
+		PublicHost: "satip.test", HTTPPort: 8875, RTSPPort: 554, TunerCount: 2,
+		SampleProfile: ts.SampleProfileH264AACShort,
+	}
+	handler := httpserver.New(cfg, lab.NewManager(lab.DefaultCatalog(), 2)).Handler()
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/agent/context", nil))
+
+	var got struct {
+		Catalog struct {
+			SampleService string `json:"sample_service"`
+			SampleRTSP    string `json:"sample_rtsp_url"`
+		} `json:"catalog"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Catalog.SampleService != "ZDF HD" || !strings.Contains(got.Catalog.SampleRTSP, "freq=11362") {
+		t.Fatalf("sample catalog: %+v", got.Catalog)
 	}
 }
 

@@ -204,7 +204,7 @@ func (s *Server) handleRequestWithState(conn net.Conn, req request, state *conne
 			"Public: OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN, GET_PARAMETER",
 		})
 	case "DESCRIBE":
-		return s.handleDescribe(cseq)
+		return s.handleDescribe(req, cseq)
 	case "SETUP":
 		return s.handleSetupWithState(conn, req, cseq, state)
 	case "PLAY":
@@ -220,7 +220,11 @@ func (s *Server) handleRequestWithState(conn net.Conn, req request, state *conne
 	}
 }
 
-func (s *Server) handleDescribe(cseq string) string {
+func (s *Server) handleDescribe(req request, cseq string) string {
+	controlURI := req.uri
+	if controlURI == "" {
+		controlURI = "stream=0"
+	}
 	body := strings.Join([]string{
 		"v=0",
 		fmt.Sprintf("o=- 0 0 IN IP4 %s", s.cfg.PublicHost),
@@ -229,7 +233,7 @@ func (s *Server) handleDescribe(cseq string) string {
 		"a=control:*",
 		"m=video 0 RTP/AVP 33",
 		"a=rtpmap:33 MP2T/90000",
-		"a=control:stream=0",
+		"a=control:" + controlURI,
 		"",
 	}, "\r\n")
 	return buildResponseWithBody(cseq, "200 OK", []string{

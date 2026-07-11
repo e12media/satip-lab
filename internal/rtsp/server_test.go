@@ -122,6 +122,20 @@ func TestDescribeReturnsMinimalSDP(t *testing.T) {
 	}
 }
 
+func TestDescribePreservesTuningURIInMediaControl(t *testing.T) {
+	server := NewServer(config.Config{PublicHost: "198.51.100.1"}, &ts.Source{}, lab.NewManager(lab.DefaultCatalog(), 1))
+	tuningURI := "rtsp://198.51.100.1:554/?src=1&freq=11362&pol=h&msys=dvbs2&sr=22000&pids=0,17,6100,6110,6120"
+
+	resp := server.handleRequest(
+		&fakeTCPConn{remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 55000}},
+		request{method: "DESCRIBE", uri: tuningURI, headers: map[string]string{"cseq": "2"}},
+	)
+
+	if !strings.Contains(resp, "a=control:"+tuningURI+"\r\n") {
+		t.Fatalf("media control URI did not preserve tuning parameters: %s", resp)
+	}
+}
+
 func TestNewServerResolvesSpecVendorProfile(t *testing.T) {
 	server := NewServer(config.Config{PublicHost: "127.0.0.1", VendorProfile: "spec"}, &ts.Source{}, lab.NewManager(lab.DefaultCatalog(), 1))
 

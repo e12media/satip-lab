@@ -40,6 +40,8 @@ The response includes:
 - Self-contained EPG evidence URLs, including `urls.xmltv` and `urls.clock`.
 - Ready-to-use client test environment variables.
 - Catalog source, catalog size, bundled fixture path, and a sample RTSP tune URL.
+- With a decodable built-in sample profile, `catalog.sample_service` and
+  `catalog.sample_rtsp_url` identify ZDF HD, the service that carries that sample.
 - Feature flags for custom catalogs, compatibility evidence tooling, compatibility profiles, DVB SI basics, XMLTV, EIT present/following, frontend lifecycle, frontend telemetry, hardware-style status, multi-server topology fixtures, per-service media, playback observability, playback diagnostics, RTCP APP status, RTSP interleaved TCP, RTSP/RTP smoke, and runtime scenarios.
 - Runtime profile name from `runtime.profile`.
 - Compatibility profile names and corpus path from `compatibility`.

@@ -1,4 +1,4 @@
-.PHONY: test lint run build docker-up docker-down smoke tidy
+.PHONY: test lint run build docker-up docker-up-android-emulator docker-down smoke tidy
 
 HTTP_HOST ?= 127.0.0.1
 HTTP_PORT ?= 8875
@@ -28,6 +28,9 @@ run:
 
 docker-up:
 	docker compose up --build -d
+
+docker-up-android-emulator:
+	SATIP_LAB_PUBLIC_HOST=10.0.2.2 docker compose up --build -d
 
 docker-down:
 	docker compose down

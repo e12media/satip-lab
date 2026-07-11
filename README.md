@@ -118,6 +118,17 @@ SATIP_LAB_PUBLIC_HOST=host.docker.internal docker compose up --build
 
 Use manual server IP `host.docker.internal` (or `127.0.0.1` with published ports) if SSDP multicast is unreliable across the VM boundary.
 
+### Android emulator
+
+Start the lab with URLs advertised through the Android emulator's host alias:
+
+```bash
+make docker-up-android-emulator
+```
+
+The emulator can then use `10.0.2.2` for HTTP and RTSP. Host-side integration
+tests should continue to use the published ports on `127.0.0.1`.
+
 ### Failure scenarios
 
 ```bash
