@@ -1156,13 +1156,21 @@ func TestPlayPayloadProviderObservesScenarioChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	normalPayload := append([]byte(nil), payloadProvider().data...)
+	normal := payloadProvider()
+	normalPayload := append([]byte(nil), normal.data...)
+	if normal.preserveContinuityErrors {
+		t.Fatal("normal payload should normalize continuity counters")
+	}
 	if err := manager.SetScenario(lab.ScenarioContinuityErrors); err != nil {
 		t.Fatal(err)
 	}
-	changedPayload := payloadProvider().data
+	changed := payloadProvider()
+	changedPayload := changed.data
 	if bytes.Equal(normalPayload, changedPayload) {
 		t.Fatal("expected payload provider to observe continuity error scenario change")
+	}
+	if !changed.preserveContinuityErrors {
+		t.Fatal("continuity error payload should preserve intentional counter corruption")
 	}
 }
 

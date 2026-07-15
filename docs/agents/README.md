@@ -57,9 +57,10 @@ highest-priority override; missing per-service files fall back to the selected
 sample profile or synthetic TS.
 
 When `features.monotonic_media_timing` is true, repeated MPEG-TS file payloads
-keep PCR, PTS, and DTS moving forward across loop boundaries. RTP sequence
-numbers and RTP timestamps are likewise continuous for the lifetime of a PLAY
-stream.
+use PCR as their common loop clock and keep PCR, PTS, DTS, and per-PID TS
+continuity counters moving forward across boundaries. RTP sequence numbers and
+RTP timestamps are likewise continuous for the lifetime of a PLAY stream. The
+intentional `cc_errors` scenario preserves its corrupted counters.
 
 When `features.frontend_lifecycle` is true, client tests can assert that normal
 `SETUP` reports `frontend.state=tuning` before the deterministic lock window

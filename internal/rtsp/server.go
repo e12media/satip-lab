@@ -539,11 +539,15 @@ func (s *Server) playPayloadProvider(profile ts.ServiceProfile, service lab.Serv
 	var mu sync.Mutex
 	cache := make(map[string][]byte)
 	lastKey := ""
+	lastPreserveContinuityErrors := false
 
 	load := func(scenario lab.Scenario) ([]byte, error) {
 		key := streamPayloadKey(scenario, service, mux)
+		preserveContinuityErrors := scenario.Name == lab.ScenarioContinuityErrors && scenario.AppliesTo(service, mux)
 		mu.Lock()
 		if payload, ok := cache[key]; ok {
+			lastKey = key
+			lastPreserveContinuityErrors = preserveContinuityErrors
 			mu.Unlock()
 			return payload, nil
 		}
@@ -556,6 +560,7 @@ func (s *Server) playPayloadProvider(profile ts.ServiceProfile, service lab.Serv
 		mu.Lock()
 		cache[key] = payload
 		lastKey = key
+		lastPreserveContinuityErrors = preserveContinuityErrors
 		mu.Unlock()
 		return payload, nil
 	}
@@ -566,13 +571,18 @@ func (s *Server) playPayloadProvider(profile ts.ServiceProfile, service lab.Serv
 	return func() streamPayload {
 		scenario := s.lab.Scenario()
 		key := streamPayloadKey(scenario, service, mux)
+		preserveContinuityErrors := scenario.Name == lab.ScenarioContinuityErrors && scenario.AppliesTo(service, mux)
 		payload, err := load(scenario)
 		if err == nil {
-			return streamPayload{key: key, data: payload}
+			return streamPayload{key: key, data: payload, preserveContinuityErrors: preserveContinuityErrors}
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		return streamPayload{key: lastKey, data: cache[lastKey]}
+		return streamPayload{
+			key:                      lastKey,
+			data:                     cache[lastKey],
+			preserveContinuityErrors: lastPreserveContinuityErrors,
+		}
 	}, nil
 }
 
@@ -741,8 +751,9 @@ type streamBehavior struct {
 }
 
 type streamPayload struct {
-	key  string
-	data []byte
+	key                      string
+	data                     []byte
+	preserveContinuityErrors bool
 }
 
 type streamPayloadProvider func() streamPayload
@@ -823,7 +834,7 @@ func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider,
 					continue
 				}
 				payload := payloadProvider()
-				chunk := loop.Next(payload.key, payload.data)
+				chunk := loop.Next(payload.key, payload.data, payload.preserveContinuityErrors)
 				if len(chunk) > 0 {
 					packetNumber++
 					behaviorPacketNumber++
@@ -900,7 +911,7 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 					continue
 				}
 				payload := payloadProvider()
-				chunk := loop.Next(payload.key, payload.data)
+				chunk := loop.Next(payload.key, payload.data, payload.preserveContinuityErrors)
 				if len(chunk) > 0 {
 					packetNumber++
 					behaviorPacketNumber++

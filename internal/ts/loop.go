@@ -17,9 +17,10 @@ type TimestampLoop struct {
 	nextLoop        bool
 	timestampOffset int64
 	cycleDuration   int64
+	continuity      map[uint16]byte
 }
 
-func (l *TimestampLoop) Next(key string, payload []byte) []byte {
+func (l *TimestampLoop) Next(key string, payload []byte, preserveContinuityErrors bool) []byte {
 	if len(payload) == 0 {
 		return nil
 	}
@@ -40,6 +41,10 @@ func (l *TimestampLoop) Next(key string, payload []byte) []byte {
 	}
 
 	chunk, next := (&Source{}).ChunkAt(l.rendered, l.offset)
+	if l.continuity == nil {
+		l.continuity = make(map[uint16]byte)
+	}
+	rewriteContinuityCounters(chunk, l.continuity, preserveContinuityErrors)
 	l.offset = next
 	l.nextLoop = next == 0
 	return chunk
@@ -52,6 +57,7 @@ type timestampTrack struct {
 	minimum     int64
 	maximum     int64
 	minimumStep int64
+	observed    int
 }
 
 type timestampTrackKey struct {
@@ -71,18 +77,30 @@ func timestampCycleDuration(payload []byte) int64 {
 		track.observe(raw)
 	})
 
-	duration := int64(defaultTimestampStep)
-	for _, track := range tracks {
+	for _, kind := range []byte{'R', 'D', 'P'} {
+		if duration, ok := timestampDurationForKind(tracks, kind); ok {
+			return duration
+		}
+	}
+	return defaultTimestampStep
+}
+
+func timestampDurationForKind(tracks map[timestampTrackKey]*timestampTrack, kind byte) (int64, bool) {
+	duration := int64(0)
+	for key, track := range tracks {
+		if key.kind != kind || track.observed < 2 {
+			continue
+		}
 		step := track.minimumStep
 		if step == 0 {
-			step = defaultTimestampStep
+			continue
 		}
 		candidate := track.maximum - track.minimum + step
 		if candidate > duration {
 			duration = candidate
 		}
 	}
-	return duration
+	return duration, duration > 0
 }
 
 func (t *timestampTrack) observe(raw int64) {
@@ -92,8 +110,10 @@ func (t *timestampTrack) observe(raw int64) {
 		t.current = raw
 		t.minimum = raw
 		t.maximum = raw
+		t.observed = 1
 		return
 	}
+	t.observed++
 	delta := (raw - t.previousRaw) & timestampMask
 	if delta >= timestampHalfRange {
 		delta -= timestampMask + 1
@@ -108,6 +128,44 @@ func (t *timestampTrack) observe(raw int64) {
 	}
 	if delta > 0 && (t.minimumStep == 0 || delta < t.minimumStep) {
 		t.minimumStep = delta
+	}
+}
+
+func rewriteContinuityCounters(payload []byte, nextByPID map[uint16]byte, preserveErrors bool) {
+	for offset := 0; offset+transportPacketSize <= len(payload); offset += transportPacketSize {
+		packet := payload[offset : offset+transportPacketSize]
+		if packet[0] != 0x47 {
+			continue
+		}
+		adaptationControl := (packet[3] >> 4) & 0x03
+		hasPayload := adaptationControl == 0x01 || adaptationControl == 0x03
+		if adaptationControl == 0x00 {
+			continue
+		}
+		pid := PID(packet)
+		current := packet[3] & 0x0F
+		next, initialized := nextByPID[pid]
+		if preserveErrors {
+			if hasPayload {
+				nextByPID[pid] = (current + 1) & 0x0F
+			} else if !initialized {
+				nextByPID[pid] = (current + 1) & 0x0F
+			}
+			continue
+		}
+		if !initialized {
+			if !hasPayload {
+				nextByPID[pid] = (current + 1) & 0x0F
+				continue
+			}
+			next = current
+		}
+		if hasPayload {
+			packet[3] = packet[3]&0xF0 | next
+			nextByPID[pid] = (next + 1) & 0x0F
+			continue
+		}
+		packet[3] = packet[3]&0xF0 | ((next + 15) & 0x0F)
 	}
 }
 
