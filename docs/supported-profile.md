@@ -202,6 +202,7 @@ See `docs/api.md` for request/response shapes.
 - If `SATIP_LAB_SAMPLE_PROFILE=h264_silent`, ZDF HD uses the same style of H.264 test pattern with silent AAC audio for audio-selection and muted-audio behavior tests.
 - If `SATIP_LAB_MEDIA_DIR` points to a directory, readable files named `<service-id>.ts` are looped for matching services. Missing service files fall back to the selected sample profile or synthetic TS.
 - If `SATIP_LAB_TS_PATH` points to a readable file, that file is looped for every service instead.
+- Looped MPEG-TS files preserve monotonic PCR, PTS, and DTS across payload boundaries. RTP sequence numbers and timestamps remain continuous for each PLAY stream.
 
 ## RTCP
 

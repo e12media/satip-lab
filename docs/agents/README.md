@@ -42,7 +42,7 @@ The response includes:
 - Catalog source, catalog size, bundled fixture path, and a sample RTSP tune URL.
 - With a decodable built-in sample profile, `catalog.sample_service` and
   `catalog.sample_rtsp_url` identify ZDF HD, the service that carries that sample.
-- Feature flags for custom catalogs, compatibility evidence tooling, compatibility profiles, DVB SI basics, XMLTV, EIT present/following, frontend lifecycle, frontend telemetry, hardware-style status, multi-server topology fixtures, per-service media, playback observability, playback diagnostics, RTCP APP status, RTSP interleaved TCP, RTSP/RTP smoke, and runtime scenarios.
+- Feature flags for custom catalogs, compatibility evidence tooling, compatibility profiles, DVB SI basics, XMLTV, EIT present/following, frontend lifecycle, frontend telemetry, hardware-style status, multi-server topology fixtures, monotonic media timing, per-service media, playback observability, playback diagnostics, RTCP APP status, RTSP interleaved TCP, RTSP/RTP smoke, and runtime scenarios.
 - Runtime profile name from `runtime.profile`.
 - Compatibility profile names and corpus path from `compatibility`.
 - Runtime scenario names and whether they can be scoped by `service_id` or `mux_id`.
@@ -55,6 +55,11 @@ When `features.per_service_media` is true, client visual playback tests can set
 `<service-id>.ts`, such as `zdf-hd.ts`. `SATIP_LAB_TS_PATH` remains the global
 highest-priority override; missing per-service files fall back to the selected
 sample profile or synthetic TS.
+
+When `features.monotonic_media_timing` is true, repeated MPEG-TS file payloads
+keep PCR, PTS, and DTS moving forward across loop boundaries. RTP sequence
+numbers and RTP timestamps are likewise continuous for the lifetime of a PLAY
+stream.
 
 When `features.frontend_lifecycle` is true, client tests can assert that normal
 `SETUP` reports `frontend.state=tuning` before the deterministic lock window

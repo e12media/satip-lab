@@ -704,8 +704,8 @@ func TestStartStreamingStopsAfterPacketLimit(t *testing.T) {
 	payload := make([]byte, 188)
 	payload[0] = 0x47
 
-	sess.startStreaming(func() []byte {
-		return payload
+	sess.startStreaming(func() streamPayload {
+		return streamPayload{data: payload}
 	}, NewRTPSender(), func() streamBehavior {
 		return streamBehavior{packetLimit: 2}
 	}, nil)
@@ -730,6 +730,43 @@ func TestStartStreamingStopsAfterPacketLimit(t *testing.T) {
 	}
 	if sess.streamingActive() {
 		t.Fatal("expected RTP sender resources to be released after packet limit")
+	}
+}
+
+func TestStartStreamingKeepsMPEGTSPCRMonotonicAcrossPayloadLoops(t *testing.T) {
+	rtpConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rtpConn.Close()
+
+	sess := &session{
+		clientIP:      net.ParseIP("127.0.0.1"),
+		clientRTPPort: rtpConn.LocalAddr().(*net.UDPAddr).Port,
+	}
+	payload := testPCRPacket(90000)
+	sess.startStreaming(func() streamPayload {
+		return streamPayload{key: lab.ScenarioNormal, data: payload}
+	}, NewRTPSender(), func() streamBehavior {
+		return streamBehavior{packetLimit: 2}
+	}, nil)
+	defer sess.stopStreaming()
+
+	buf := make([]byte, 2048)
+	pcrs := make([]int64, 0, 2)
+	for len(pcrs) < 2 {
+		_ = rtpConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+		n, _, err := rtpConn.ReadFromUDP(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n < 12+188 {
+			t.Fatalf("RTP packet too short: %d", n)
+		}
+		pcrs = append(pcrs, testPCRBase(buf[12+6:12+12]))
+	}
+	if pcrs[0] != 90000 || pcrs[1] != 93600 {
+		t.Fatalf("PCR timeline across loop: got %v want [90000 93600]", pcrs)
 	}
 }
 
@@ -1119,11 +1156,11 @@ func TestPlayPayloadProviderObservesScenarioChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	normalPayload := append([]byte(nil), payloadProvider()...)
+	normalPayload := append([]byte(nil), payloadProvider().data...)
 	if err := manager.SetScenario(lab.ScenarioContinuityErrors); err != nil {
 		t.Fatal(err)
 	}
-	changedPayload := payloadProvider()
+	changedPayload := payloadProvider().data
 	if bytes.Equal(normalPayload, changedPayload) {
 		t.Fatal("expected payload provider to observe continuity error scenario change")
 	}
@@ -1703,6 +1740,34 @@ func sameInts(got, want []int) bool {
 		}
 	}
 	return true
+}
+
+func testPCRPacket(pcr int64) []byte {
+	packet := make([]byte, 188)
+	for i := range packet {
+		packet[i] = 0xFF
+	}
+	packet[0] = 0x47
+	packet[1] = 0x01
+	packet[2] = 0x00
+	packet[3] = 0x20
+	packet[4] = 7
+	packet[5] = 0x10
+	packet[6] = byte(pcr >> 25)
+	packet[7] = byte(pcr >> 17)
+	packet[8] = byte(pcr >> 9)
+	packet[9] = byte(pcr >> 1)
+	packet[10] = 0x7E | byte(pcr&1)<<7
+	packet[11] = 0x00
+	return packet
+}
+
+func testPCRBase(encoded []byte) int64 {
+	return int64(encoded[0])<<25 |
+		int64(encoded[1])<<17 |
+		int64(encoded[2])<<9 |
+		int64(encoded[3])<<1 |
+		int64(encoded[4]>>7)
 }
 
 func (f *fakeTCPConn) Read(_ []byte) (int, error) { return 0, nil }

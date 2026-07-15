@@ -563,15 +563,16 @@ func (s *Server) playPayloadProvider(profile ts.ServiceProfile, service lab.Serv
 	if _, err := load(s.lab.Scenario()); err != nil {
 		return nil, err
 	}
-	return func() []byte {
+	return func() streamPayload {
 		scenario := s.lab.Scenario()
+		key := streamPayloadKey(scenario, service, mux)
 		payload, err := load(scenario)
 		if err == nil {
-			return payload
+			return streamPayload{key: key, data: payload}
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		return cache[lastKey]
+		return streamPayload{key: lastKey, data: cache[lastKey]}
 	}, nil
 }
 
@@ -739,7 +740,12 @@ type streamBehavior struct {
 	jitterDelay  time.Duration
 }
 
-type streamPayloadProvider func() []byte
+type streamPayload struct {
+	key  string
+	data []byte
+}
+
+type streamPayloadProvider func() streamPayload
 
 type streamBehaviorProvider func() streamBehavior
 
@@ -782,10 +788,9 @@ func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider,
 
 	dest := &net.UDPAddr{IP: s.clientIP, Port: s.clientRTPPort}
 	rtcpDest := &net.UDPAddr{IP: s.clientIP, Port: s.clientRTCPort}
-	source := &ts.Source{}
+	loop := &ts.TimestampLoop{}
 
 	go func() {
-		offset := 0
 		behaviorSent := 0
 		packetNumber := 0
 		behaviorPacketNumber := 0
@@ -818,7 +823,7 @@ func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider,
 					continue
 				}
 				payload := payloadProvider()
-				chunk, next := source.ChunkAt(payload, offset)
+				chunk := loop.Next(payload.key, payload.data)
 				if len(chunk) > 0 {
 					packetNumber++
 					behaviorPacketNumber++
@@ -838,7 +843,6 @@ func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider,
 						sender.Skip()
 					}
 				}
-				offset = next
 			}
 		}
 	}()
@@ -850,7 +854,7 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 	}
 	stopCh := make(chan struct{})
 	s.stopCh = stopCh
-	source := &ts.Source{}
+	loop := &ts.TimestampLoop{}
 	writeMu := s.rtspWriteMu
 	if writeMu == nil {
 		writeMu = &sync.Mutex{}
@@ -858,7 +862,6 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 	}
 
 	go func() {
-		offset := 0
 		behaviorSent := 0
 		packetNumber := 0
 		behaviorPacketNumber := 0
@@ -897,7 +900,7 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 					continue
 				}
 				payload := payloadProvider()
-				chunk, next := source.ChunkAt(payload, offset)
+				chunk := loop.Next(payload.key, payload.data)
 				if len(chunk) > 0 {
 					packetNumber++
 					behaviorPacketNumber++
@@ -928,7 +931,6 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 						sender.Skip()
 					}
 				}
-				offset = next
 			}
 		}
 	}()

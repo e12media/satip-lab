@@ -106,7 +106,9 @@ SATIP_LAB_MEDIA_DIR=media go run ./cmd/satip-lab
 `SATIP_LAB_TS_PATH` still has highest priority and loops one file for every
 service. When `SATIP_LAB_MEDIA_DIR` is set, files named `<service-id>.ts` are
 used per service; missing services fall back to the selected sample profile or
-synthetic TS.
+synthetic TS. The server rebases MPEG-TS PCR, PTS, and DTS at loop boundaries,
+while RTP sequence numbers and timestamps remain continuous for each PLAY
+stream.
 
 ### Docker Desktop (macOS / Windows)
 
