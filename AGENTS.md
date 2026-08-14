@@ -68,6 +68,7 @@ See `docs/supported-profile.md`. Summary:
 | `SATIP_LAB_SSDP_PORT` | `1900` | `0` disables SSDP |
 | `SATIP_LAB_CATALOG` | empty | Optional YAML channel catalog path; empty uses the five-service built-in catalog |
 | `SATIP_LAB_TS_PATH` | empty | Optional file loop; empty generates distinct TS per service |
+| `SATIP_LAB_MEDIA_DIR` | empty | Optional directory of per-service MPEG-TS loops named `<service-id>.ts`; missing files fall back to generated TS |
 | `SATIP_LAB_SAMPLE_PROFILE` | `synthetic` | `synthetic`, `h264_aac_short`, or `h264_silent`; Docker image defaults to `h264_aac_short` |
 | `SATIP_LAB_PROFILE` | `generic-satip-1.2` | Compatibility profile for SSDP, device XML path/metadata, M3U path, and RTSP behavior |
 | `SATIP_LAB_VENDOR_PROFILE` | `spec` | RTSP behavior profile selector alias; `SATIP_LAB_PROFILE` is preferred |

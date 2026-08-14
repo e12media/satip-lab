@@ -204,7 +204,7 @@ func (s *Server) handleRequestWithState(conn net.Conn, req request, state *conne
 			"Public: OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN, GET_PARAMETER",
 		})
 	case "DESCRIBE":
-		return s.handleDescribe(cseq)
+		return s.handleDescribe(req, cseq)
 	case "SETUP":
 		return s.handleSetupWithState(conn, req, cseq, state)
 	case "PLAY":
@@ -220,7 +220,11 @@ func (s *Server) handleRequestWithState(conn net.Conn, req request, state *conne
 	}
 }
 
-func (s *Server) handleDescribe(cseq string) string {
+func (s *Server) handleDescribe(req request, cseq string) string {
+	controlURI := req.uri
+	if controlURI == "" {
+		controlURI = "stream=0"
+	}
 	body := strings.Join([]string{
 		"v=0",
 		fmt.Sprintf("o=- 0 0 IN IP4 %s", s.cfg.PublicHost),
@@ -229,7 +233,7 @@ func (s *Server) handleDescribe(cseq string) string {
 		"a=control:*",
 		"m=video 0 RTP/AVP 33",
 		"a=rtpmap:33 MP2T/90000",
-		"a=control:stream=0",
+		"a=control:" + controlURI,
 		"",
 	}, "\r\n")
 	return buildResponseWithBody(cseq, "200 OK", []string{
@@ -535,11 +539,15 @@ func (s *Server) playPayloadProvider(profile ts.ServiceProfile, service lab.Serv
 	var mu sync.Mutex
 	cache := make(map[string][]byte)
 	lastKey := ""
+	lastPreserveContinuityErrors := false
 
 	load := func(scenario lab.Scenario) ([]byte, error) {
 		key := streamPayloadKey(scenario, service, mux)
+		preserveContinuityErrors := scenario.Name == lab.ScenarioContinuityErrors && scenario.AppliesTo(service, mux)
 		mu.Lock()
 		if payload, ok := cache[key]; ok {
+			lastKey = key
+			lastPreserveContinuityErrors = preserveContinuityErrors
 			mu.Unlock()
 			return payload, nil
 		}
@@ -552,6 +560,7 @@ func (s *Server) playPayloadProvider(profile ts.ServiceProfile, service lab.Serv
 		mu.Lock()
 		cache[key] = payload
 		lastKey = key
+		lastPreserveContinuityErrors = preserveContinuityErrors
 		mu.Unlock()
 		return payload, nil
 	}
@@ -559,15 +568,21 @@ func (s *Server) playPayloadProvider(profile ts.ServiceProfile, service lab.Serv
 	if _, err := load(s.lab.Scenario()); err != nil {
 		return nil, err
 	}
-	return func() []byte {
+	return func() streamPayload {
 		scenario := s.lab.Scenario()
+		key := streamPayloadKey(scenario, service, mux)
+		preserveContinuityErrors := scenario.Name == lab.ScenarioContinuityErrors && scenario.AppliesTo(service, mux)
 		payload, err := load(scenario)
 		if err == nil {
-			return payload
+			return streamPayload{key: key, data: payload, preserveContinuityErrors: preserveContinuityErrors}
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		return cache[lastKey]
+		return streamPayload{
+			key:                      lastKey,
+			data:                     cache[lastKey],
+			preserveContinuityErrors: lastPreserveContinuityErrors,
+		}
 	}, nil
 }
 
@@ -735,7 +750,13 @@ type streamBehavior struct {
 	jitterDelay  time.Duration
 }
 
-type streamPayloadProvider func() []byte
+type streamPayload struct {
+	key                      string
+	data                     []byte
+	preserveContinuityErrors bool
+}
+
+type streamPayloadProvider func() streamPayload
 
 type streamBehaviorProvider func() streamBehavior
 
@@ -778,10 +799,9 @@ func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider,
 
 	dest := &net.UDPAddr{IP: s.clientIP, Port: s.clientRTPPort}
 	rtcpDest := &net.UDPAddr{IP: s.clientIP, Port: s.clientRTCPort}
-	source := &ts.Source{}
+	loop := &ts.TimestampLoop{}
 
 	go func() {
-		offset := 0
 		behaviorSent := 0
 		packetNumber := 0
 		behaviorPacketNumber := 0
@@ -814,7 +834,7 @@ func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider,
 					continue
 				}
 				payload := payloadProvider()
-				chunk, next := source.ChunkAt(payload, offset)
+				chunk := loop.Next(payload.key, payload.data, payload.preserveContinuityErrors)
 				if len(chunk) > 0 {
 					packetNumber++
 					behaviorPacketNumber++
@@ -834,7 +854,6 @@ func (s *session) startUDPStreamingLocked(payloadProvider streamPayloadProvider,
 						sender.Skip()
 					}
 				}
-				offset = next
 			}
 		}
 	}()
@@ -846,7 +865,7 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 	}
 	stopCh := make(chan struct{})
 	s.stopCh = stopCh
-	source := &ts.Source{}
+	loop := &ts.TimestampLoop{}
 	writeMu := s.rtspWriteMu
 	if writeMu == nil {
 		writeMu = &sync.Mutex{}
@@ -854,7 +873,6 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 	}
 
 	go func() {
-		offset := 0
 		behaviorSent := 0
 		packetNumber := 0
 		behaviorPacketNumber := 0
@@ -893,7 +911,7 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 					continue
 				}
 				payload := payloadProvider()
-				chunk, next := source.ChunkAt(payload, offset)
+				chunk := loop.Next(payload.key, payload.data, payload.preserveContinuityErrors)
 				if len(chunk) > 0 {
 					packetNumber++
 					behaviorPacketNumber++
@@ -924,7 +942,6 @@ func (s *session) startInterleavedStreamingLocked(payloadProvider streamPayloadP
 						sender.Skip()
 					}
 				}
-				offset = next
 			}
 		}
 	}()

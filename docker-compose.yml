@@ -3,9 +3,9 @@ services:
     build: .
     image: satip-lab:local
     ports:
-      - "554:554/tcp"
-      - "8875:8875/tcp"
-      - "1900:1900/udp"
+      - "${SATIP_LAB_RTSP_PUBLISHED_PORT:-554}:554/tcp"
+      - "${SATIP_LAB_HTTP_PUBLISHED_PORT:-8875}:8875/tcp"
+      - "${SATIP_LAB_SSDP_PUBLISHED_PORT:-1900}:1900/udp"
     environment:
       # Host that clients use in LOCATION / M3U URLs.
       # macOS/Windows Docker Desktop: host.docker.internal
@@ -15,8 +15,11 @@ services:
       SATIP_LAB_PUBLIC_HTTP_PORT: ${SATIP_LAB_PUBLIC_HTTP_PORT:-0}
       SATIP_LAB_PUBLIC_RTSP_PORT: ${SATIP_LAB_PUBLIC_RTSP_PORT:-0}
       SATIP_LAB_TUNERS: ${SATIP_LAB_TUNERS:-2}
+      SATIP_LAB_SSDP_PORT: ${SATIP_LAB_SSDP_PORT:-1900}
       SATIP_LAB_CATALOG: ${SATIP_LAB_CATALOG:-}
       SATIP_LAB_TOPOLOGY: ${SATIP_LAB_TOPOLOGY:-}
+      SATIP_LAB_TS_PATH: ${SATIP_LAB_TS_PATH:-}
+      SATIP_LAB_MEDIA_DIR: ${SATIP_LAB_MEDIA_DIR:-}
       SATIP_LAB_SAMPLE_PROFILE: ${SATIP_LAB_SAMPLE_PROFILE:-h264_aac_short}
       SATIP_LAB_PROFILE: ${SATIP_LAB_PROFILE:-generic-satip-1.2}
       SATIP_LAB_VENDOR_PROFILE: ${SATIP_LAB_VENDOR_PROFILE:-spec}

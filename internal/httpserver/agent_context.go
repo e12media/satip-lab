@@ -5,6 +5,7 @@ import (
 
 	"github.com/e12media/satip-lab/internal/config"
 	"github.com/e12media/satip-lab/internal/lab"
+	"github.com/e12media/satip-lab/internal/ts"
 	"github.com/e12media/satip-lab/internal/vendorprofile"
 )
 
@@ -81,8 +82,17 @@ func buildAgentContext(cfg config.Config, manager *lab.Manager) AgentContext {
 	status := manager.Status()
 	sampleName := ""
 	sampleRTSP := ""
-	if len(catalog.Channels()) > 0 {
-		ch := catalog.Channels()[0]
+	channels := catalog.Channels()
+	if len(channels) > 0 {
+		ch := channels[0]
+		if cfg.SampleProfile == ts.SampleProfileH264AACShort || cfg.SampleProfile == ts.SampleProfileH264Silent {
+			for _, candidate := range channels {
+				if candidate.ID == "zdf-hd" {
+					ch = candidate
+					break
+				}
+			}
+		}
 		sampleName = ch.Name
 		sampleRTSP = rtspBaseURL + "?" + ch.TuningQuery()
 	}
@@ -130,6 +140,8 @@ func buildAgentContext(cfg config.Config, manager *lab.Manager) AgentContext {
 			"frontend_telemetry":     true,
 			"hardware_status":        true,
 			"multi_server_topology":  true,
+			"monotonic_media_timing": true,
+			"per_service_media":      true,
 			"playback_diagnostics":   true,
 			"playback_observability": true,
 			"rtcp_app_status":        true,

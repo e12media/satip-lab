@@ -84,7 +84,7 @@ Provide a **deterministic SAT>IP lab server surface** for client development and
 
 1. **ts-asset** stage: `ffmpeg` builds generated MPEG-TS assets under `assets/`.
 2. **build** stage: `go build` static binary.
-3. **runtime** stage: binary + generated MPEG-TS assets + bundled catalog fixtures, no Go toolchain. Docker defaults to `SATIP_LAB_SAMPLE_PROFILE=h264_aac_short` so ZDF HD is decodable out of the box.
+3. **runtime** stage: binary + generated MPEG-TS assets + bundled catalog fixtures, no Go toolchain. Docker defaults to `SATIP_LAB_SAMPLE_PROFILE=h264_aac_short` so ZDF HD is decodable out of the box. Custom per-service MPEG-TS loops can be mounted and selected with `SATIP_LAB_MEDIA_DIR`.
 
 ## Extension points
 

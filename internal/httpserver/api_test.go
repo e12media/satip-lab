@@ -15,6 +15,7 @@ import (
 	"github.com/e12media/satip-lab/internal/httpserver"
 	"github.com/e12media/satip-lab/internal/lab"
 	"github.com/e12media/satip-lab/internal/topology"
+	"github.com/e12media/satip-lab/internal/ts"
 )
 
 func TestAPICatalogMuxesAndServices(t *testing.T) {
@@ -523,7 +524,7 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 	if got.Catalog.Source != "built_in" || got.Catalog.CatalogPath != "" || got.Catalog.FixturePath != "fixtures/astra-19.2e-dach.yaml" {
 		t.Fatalf("catalog source: %+v", got.Catalog)
 	}
-	for _, feature := range []string{"custom_catalogs", "compatibility_evidence", "compatibility_profiles", "dvb_si_basics", "xmltv_epg", "eit_present_following", "frontend_lifecycle", "multi_server_topology", "playback_diagnostics", "playback_observability", "rtcp_app_status", "rtsp_interleaved_tcp", "rtsp_rtp_smoke", "runtime_scenarios", "scenario_timelines"} {
+	for _, feature := range []string{"custom_catalogs", "compatibility_evidence", "compatibility_profiles", "dvb_si_basics", "xmltv_epg", "eit_present_following", "frontend_lifecycle", "multi_server_topology", "monotonic_media_timing", "per_service_media", "playback_diagnostics", "playback_observability", "rtcp_app_status", "rtsp_interleaved_tcp", "rtsp_rtp_smoke", "runtime_scenarios", "scenario_timelines"} {
 		if !got.Features[feature] {
 			t.Fatalf("missing feature %q in %+v", feature, got.Features)
 		}
@@ -576,6 +577,29 @@ func TestAPIAgentContextReturnsCodingAgentBootstrap(t *testing.T) {
 		if !containsStringWith(got.RecommendedChecks, hint) {
 			t.Fatalf("recommended checks should include %q workflow hint: %+v", hint, got.RecommendedChecks)
 		}
+	}
+}
+
+func TestAPIAgentContextUsesDecodableZDFSample(t *testing.T) {
+	cfg := config.Config{
+		PublicHost: "satip.test", HTTPPort: 8875, RTSPPort: 554, TunerCount: 2,
+		SampleProfile: ts.SampleProfileH264AACShort,
+	}
+	handler := httpserver.New(cfg, lab.NewManager(lab.DefaultCatalog(), 2)).Handler()
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/agent/context", nil))
+
+	var got struct {
+		Catalog struct {
+			SampleService string `json:"sample_service"`
+			SampleRTSP    string `json:"sample_rtsp_url"`
+		} `json:"catalog"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Catalog.SampleService != "ZDF HD" || !strings.Contains(got.Catalog.SampleRTSP, "freq=11362") {
+		t.Fatalf("sample catalog: %+v", got.Catalog)
 	}
 }
 

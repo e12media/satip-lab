@@ -15,6 +15,7 @@ func TestFromEnvironment(t *testing.T) {
 	t.Setenv("SATIP_LAB_TUNERS", "4")
 	t.Setenv("SATIP_LAB_CATALOG", "/tmp/channels.yaml")
 	t.Setenv("SATIP_LAB_TOPOLOGY", "/tmp/topology.yaml")
+	t.Setenv("SATIP_LAB_MEDIA_DIR", "/tmp/satip-media")
 	t.Setenv("SATIP_LAB_SAMPLE_PROFILE", "h264_silent")
 	t.Setenv("SATIP_LAB_PROFILE", "minisatip")
 	t.Setenv("SATIP_LAB_VENDOR_PROFILE", "spec")
@@ -39,6 +40,9 @@ func TestFromEnvironment(t *testing.T) {
 	}
 	if cfg.TopologyPath != "/tmp/topology.yaml" {
 		t.Fatalf("topology path: got %q", cfg.TopologyPath)
+	}
+	if cfg.MediaDir != "/tmp/satip-media" {
+		t.Fatalf("media dir: got %q", cfg.MediaDir)
 	}
 	if cfg.EPGClock != "real" {
 		t.Fatalf("epg clock: got %q", cfg.EPGClock)
@@ -117,10 +121,10 @@ func TestProfileCanChangeDeviceDescriptionURL(t *testing.T) {
 func TestSchemaListsStableEnvironmentContract(t *testing.T) {
 	schema := config.Schema()
 
-	if schema.Version != "2.1" {
+	if schema.Version != "2.2" {
 		t.Fatalf("schema version: got %q", schema.Version)
 	}
-	if len(schema.Variables) != 16 {
+	if len(schema.Variables) != 17 {
 		t.Fatalf("schema variables: got %d", len(schema.Variables))
 	}
 	if schema.Variables[0].Name != "SATIP_LAB_BIND" || schema.Variables[0].Default != "0.0.0.0" {
@@ -131,6 +135,7 @@ func TestSchemaListsStableEnvironmentContract(t *testing.T) {
 	}
 	foundEPGClock := false
 	foundSampleProfile := false
+	foundMediaDir := false
 	foundProfile := false
 	foundVendorProfile := false
 	foundCatalog := false
@@ -146,6 +151,12 @@ func TestSchemaListsStableEnvironmentContract(t *testing.T) {
 			foundTopology = true
 			if variable.Default != "" {
 				t.Fatalf("topology default: %+v", variable)
+			}
+		}
+		if variable.Name == "SATIP_LAB_MEDIA_DIR" {
+			foundMediaDir = true
+			if variable.Default != "" || variable.Type != "string" {
+				t.Fatalf("media dir schema: %+v", variable)
 			}
 		}
 		if variable.Name == "SATIP_LAB_SAMPLE_PROFILE" {
@@ -187,6 +198,9 @@ func TestSchemaListsStableEnvironmentContract(t *testing.T) {
 	}
 	if !foundSampleProfile {
 		t.Fatal("missing SATIP_LAB_SAMPLE_PROFILE schema entry")
+	}
+	if !foundMediaDir {
+		t.Fatal("missing SATIP_LAB_MEDIA_DIR schema entry")
 	}
 	if !foundProfile {
 		t.Fatal("missing SATIP_LAB_PROFILE schema entry")

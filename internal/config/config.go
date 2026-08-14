@@ -10,7 +10,7 @@ import (
 )
 
 const SatIPSearchTarget = "urn:ses-com:device:SatIPServer:1"
-const SchemaVersion = "2.1"
+const SchemaVersion = "2.2"
 
 type Scenario int
 
@@ -31,6 +31,7 @@ type Config struct {
 	CatalogPath         string
 	TopologyPath        string
 	TransportStreamPath string
+	MediaDir            string
 	SampleProfile       string
 	Profile             string
 	VendorProfile       string
@@ -66,6 +67,7 @@ func Schema() SchemaDocument {
 			{Name: "SATIP_LAB_CATALOG", Default: "", Type: "string", Description: "Optional YAML channel catalog path; empty uses the built-in five-service DACH catalog."},
 			{Name: "SATIP_LAB_TOPOLOGY", Default: "", Type: "string", Description: "Optional YAML topology fixture path for deterministic multi-device client tests."},
 			{Name: "SATIP_LAB_TS_PATH", Default: "", Type: "string", Description: "Optional MPEG-TS file to loop for all services; empty uses generated TS."},
+			{Name: "SATIP_LAB_MEDIA_DIR", Default: "", Type: "string", Description: "Optional directory of per-service MPEG-TS loops named <service-id>.ts; missing files fall back to generated TS."},
 			{Name: "SATIP_LAB_SAMPLE_PROFILE", Default: "synthetic", Type: "string", Description: "Built-in service sample profile used when SATIP_LAB_TS_PATH is empty.", Enum: []string{"synthetic", "h264_aac_short", "h264_silent"}},
 			{Name: "SATIP_LAB_PROFILE", Default: vendorprofile.NameGeneric, Type: "string", Description: "Compatibility profile for SSDP, device XML path/metadata, M3U, and RTSP behavior.", Enum: vendorprofile.Names()},
 			{Name: "SATIP_LAB_VENDOR_PROFILE", Default: vendorprofile.NameSpec, Type: "string", Description: "RTSP behavior profile selector alias. SATIP_LAB_PROFILE is preferred.", Enum: vendorprofile.Names()},
@@ -88,6 +90,7 @@ func FromEnvironment() Config {
 		CatalogPath:         envOr("SATIP_LAB_CATALOG", ""),
 		TopologyPath:        envOr("SATIP_LAB_TOPOLOGY", ""),
 		TransportStreamPath: envOr("SATIP_LAB_TS_PATH", ""),
+		MediaDir:            envOr("SATIP_LAB_MEDIA_DIR", ""),
 		SampleProfile:       envOr("SATIP_LAB_SAMPLE_PROFILE", "synthetic"),
 		Profile:             envProfile(),
 		VendorProfile:       envOr("SATIP_LAB_VENDOR_PROFILE", vendorprofile.NameSpec),

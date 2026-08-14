@@ -120,7 +120,7 @@ spec-compatible RTSP behavior and use the normal lab RTP/tuner model.
 - Runtime `epg_gap` suppresses generated EIT p/f for the targeted service or mux while synthetic media packets continue.
 - Runtime `epg_mismatch` remains XMLTV-only; EIT stays bound to the tuned service id.
 - Runtime `epg_stale` affects HTTP `Last-Modified` only and does not change TS packets.
-- SI tables are generated only for synthetic service TS. `SATIP_LAB_TS_PATH` and decodable sample profiles are served unchanged.
+- SI tables are generated only for synthetic service TS. `SATIP_LAB_TS_PATH`, `SATIP_LAB_MEDIA_DIR`, and decodable sample profiles are served unchanged.
 
 ## RTSP
 
@@ -200,7 +200,9 @@ See `docs/api.md` for request/response shapes.
 - By default, each service gets distinct generated MPEG-TS packets with PAT/PMT-shaped PSI, minimal EIT p/f, minimal SDT/NIT, PES-like audio/video payloads, and service-specific markers.
 - If `SATIP_LAB_SAMPLE_PROFILE=h264_aac_short`, ZDF HD uses a generated H.264/AAC MPEG-TS test pattern; all other services keep distinct synthetic TS.
 - If `SATIP_LAB_SAMPLE_PROFILE=h264_silent`, ZDF HD uses the same style of H.264 test pattern with silent AAC audio for audio-selection and muted-audio behavior tests.
+- If `SATIP_LAB_MEDIA_DIR` points to a directory, readable files named `<service-id>.ts` are looped for matching services. Missing service files fall back to the selected sample profile or synthetic TS.
 - If `SATIP_LAB_TS_PATH` points to a readable file, that file is looped for every service instead.
+- Looped MPEG-TS files use PCR as their common loop clock and preserve monotonic PCR, PTS, DTS, and per-PID continuity counters across payload boundaries. The `cc_errors` scenario preserves its intentional counter corruption. RTP sequence numbers and timestamps remain continuous for each PLAY stream.
 
 ## RTCP
 
@@ -253,7 +255,7 @@ Designed for SAT>IP client tests such as:
 - Frontend telemetry UI and retry handling through deterministic `/api/tuners` state
 - Hardware-style status UI and management surface checks through deterministic `/api/status` fields
 - RTCP APP tuner status parsing for signal-quality UI and lock-state handling
-- RTP MPEG-TS playback (distinct synthetic TS per service, one decodable ZDF HD sample profile, or one file via `SATIP_LAB_TS_PATH`)
+- RTP MPEG-TS playback (distinct synthetic TS per service, per-service files via `SATIP_LAB_MEDIA_DIR`, one decodable ZDF HD sample profile, or one file via `SATIP_LAB_TS_PATH`)
 - Lab observability (`GET /api/status`, `/api/tuners`, `/api/events`)
 
 **Not** a substitute for validation against real SAT>IP hardware or full servers such as minisatip.

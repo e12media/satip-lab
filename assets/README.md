@@ -14,8 +14,11 @@ With a sample profile enabled, only ZDF HD uses the sample. Other services keep
 their distinct synthetic MPEG-TS packets so routing tests can still tell
 channels apart. The sample assets are generated with ZDF HD's advertised service
 id and PMT/video/audio PID layout so PID-filtering clients can decode them.
-`SATIP_LAB_TS_PATH` overrides all sample profiles and loops one file for every
-service.
+`SATIP_LAB_MEDIA_DIR` can point to a directory of playable per-service MPEG-TS
+loops named `<service-id>.ts`, such as `zdf-hd.ts`. Matching files override the
+sample profile for that service; missing files fall back to the sample profile
+or synthetic TS. `SATIP_LAB_TS_PATH` overrides both media directories and sample
+profiles and loops one file for every service.
 
 The files are generated (not committed) to keep the repository small:
 
@@ -27,6 +30,6 @@ Docker images build these files during `docker build` using `ffmpeg`.
 Generation also runs `ffprobe` verification for the ZDF HD service id and
 PMT/video/audio PID layout.
 
-Without `SATIP_LAB_TS_PATH` or a sample profile, the simulator uses generated
-service-specific TS payloads. These are intended for protocol and demux tests,
-not production TV viewing.
+Without `SATIP_LAB_TS_PATH`, `SATIP_LAB_MEDIA_DIR`, or a sample profile, the
+simulator uses generated service-specific TS payloads. These are intended for
+protocol and demux tests, not production TV viewing.

@@ -257,6 +257,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 <p>Runtime scenario: %s</p>
 <p>RTSP port: %d</p>
 <p>Transport stream: %s</p>
+<p>Media directory: %s</p>
 <p>Compatibility profile: %s</p>
 <h2>Hardware status</h2>
 <p>Device: %s (%s)</p>
@@ -272,6 +273,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		s.lab.Scenario().Name,
 		s.cfg.RTSPPort,
 		html.EscapeString(s.cfg.TransportStreamPath),
+		html.EscapeString(s.cfg.MediaDir),
 		html.EscapeString(s.cfg.CompatibilityProfile().Name),
 		html.EscapeString(status.Hardware.Identity.FriendlyName),
 		html.EscapeString(status.Hardware.Identity.Model),

@@ -99,6 +99,64 @@ func TestSilentSampleProfileUsesSilentAsset(t *testing.T) {
 	}
 }
 
+func TestMediaDirUsesPerServicePayload(t *testing.T) {
+	dir := t.TempDir()
+	writeSample(t, dir, "das-erste-hd.ts", "DAS-ERSTE-MEDIA")
+
+	source := ts.Source{MediaDir: dir}
+
+	dasErste, err := source.LoadServicePayload(ts.ServiceProfile{ID: "das-erste-hd", Name: "Das Erste HD"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(dasErste) != "DAS-ERSTE-MEDIA" {
+		t.Fatalf("media payload: got %q", string(dasErste))
+	}
+
+	zdf, err := source.LoadServicePayload(ts.ServiceProfile{ID: "zdf-hd", Name: "ZDF HD"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(zdf), "DAS-ERSTE-MEDIA") {
+		t.Fatalf("missing service-specific media should not reuse another service asset: %q", string(zdf))
+	}
+	if !strings.Contains(string(zdf), "zdf-hd") {
+		t.Fatalf("missing media asset should fall back to synthetic payload: %q", string(zdf))
+	}
+}
+
+func TestMediaDirOverridesSampleProfile(t *testing.T) {
+	dir := t.TempDir()
+	sampleDir := t.TempDir()
+	writeSample(t, dir, "zdf-hd.ts", "ZDF-MEDIA")
+	writeSample(t, sampleDir, "h264_aac_short.ts", "H264-AAC-SAMPLE")
+
+	source := ts.Source{MediaDir: dir, SampleProfile: ts.SampleProfileH264AACShort, SampleAssetDir: sampleDir}
+
+	payload, err := source.LoadServicePayload(ts.ServiceProfile{ID: "zdf-hd", Name: "ZDF HD"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(payload) != "ZDF-MEDIA" {
+		t.Fatalf("media dir should override sample profile, got %q", string(payload))
+	}
+}
+
+func TestMediaDirUsesBasenameForServiceID(t *testing.T) {
+	dir := t.TempDir()
+	writeSample(t, dir, "zdf-hd.ts", "SAFE-MEDIA")
+
+	source := ts.Source{MediaDir: dir}
+
+	payload, err := source.LoadServicePayload(ts.ServiceProfile{ID: "../zdf-hd", Name: "ZDF HD"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(payload) != "SAFE-MEDIA" {
+		t.Fatalf("media filename should use basename, got %q", string(payload))
+	}
+}
+
 func TestTransportStreamPathOverridesSampleProfile(t *testing.T) {
 	dir := t.TempDir()
 	globalPath := filepath.Join(dir, "global.ts")
@@ -107,7 +165,9 @@ func TestTransportStreamPathOverridesSampleProfile(t *testing.T) {
 	}
 	writeSample(t, dir, "h264_aac_short.ts", "H264-AAC-SAMPLE")
 
-	source := ts.Source{Path: globalPath, SampleProfile: ts.SampleProfileH264AACShort, SampleAssetDir: dir}
+	writeSample(t, dir, "zdf-hd.ts", "ZDF-MEDIA")
+
+	source := ts.Source{Path: globalPath, MediaDir: dir, SampleProfile: ts.SampleProfileH264AACShort, SampleAssetDir: dir}
 
 	for _, serviceID := range []string{"zdf-hd", "das-erste-hd"} {
 		payload, err := source.LoadServicePayload(ts.ServiceProfile{ID: serviceID})
@@ -157,6 +217,18 @@ func TestEnabledSampleProfileReturnsErrorWhenAssetMissing(t *testing.T) {
 	_, err := source.LoadServicePayload(ts.ServiceProfile{ID: "zdf-hd"})
 	if err == nil {
 		t.Fatal("expected missing sample asset to return an error")
+	}
+}
+
+func TestMediaDirReturnsErrorForEmptyServiceAsset(t *testing.T) {
+	dir := t.TempDir()
+	writeSample(t, dir, "zdf-hd.ts", "")
+
+	source := ts.Source{MediaDir: dir}
+
+	_, err := source.LoadServicePayload(ts.ServiceProfile{ID: "zdf-hd"})
+	if err == nil {
+		t.Fatal("expected empty service media asset to return an error")
 	}
 }
 

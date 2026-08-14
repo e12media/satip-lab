@@ -24,6 +24,7 @@ func main() {
 	ssdpPort := flag.Int("ssdp-port", defaults.SSDPort, "SSDP UDP port (0 disables)")
 	catalogPath := flag.String("catalog", defaults.CatalogPath, "YAML channel catalog path")
 	tsPath := flag.String("ts-path", defaults.TransportStreamPath, "MPEG-TS file looped for RTP")
+	mediaDir := flag.String("media-dir", defaults.MediaDir, "directory of per-service MPEG-TS loops named <service-id>.ts")
 	sampleProfile := flag.String("sample-profile", defaults.SampleProfile, "sample profile: synthetic, h264_aac_short, or h264_silent")
 	profile := flag.String("profile", defaults.Profile, "compatibility profile for SSDP, device XML, M3U, and RTSP")
 	vendorProfile := flag.String("vendor-profile", defaults.VendorProfile, "RTSP behavior profile selector alias")
@@ -56,6 +57,7 @@ func main() {
 		SSDPort:             *ssdpPort,
 		CatalogPath:         *catalogPath,
 		TransportStreamPath: *tsPath,
+		MediaDir:            *mediaDir,
 		SampleProfile:       *sampleProfile,
 		Profile:             activeProfile,
 		VendorProfile:       *vendorProfile,
@@ -88,6 +90,7 @@ func main() {
 	fmt.Println("  Tuners      :", cfg.TunerCount)
 	fmt.Println("  Catalog     :", cfg.CatalogPath)
 	fmt.Println("  TS file     :", cfg.TransportStreamPath)
+	fmt.Println("  Media dir   :", cfg.MediaDir)
 	fmt.Println("  Sample prof.:", cfg.SampleProfile)
 	fmt.Println("  Profile     :", cfg.CompatibilityProfile().Name)
 	fmt.Println("  Vendor prof.:", cfg.VendorProfile)
