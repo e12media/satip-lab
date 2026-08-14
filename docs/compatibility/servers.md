@@ -45,6 +45,13 @@ SATIP_LAB_PROFILE=telestar-digibit-r1 docker compose up
 advertised M3U path, and RTSP profile knobs. `SATIP_LAB_VENDOR_PROFILE` maps
 through the same profile registry as an RTSP profile selector alias.
 
+## Cross-Implementation Validation
+
+See [cross-implementation.md](cross-implementation.md) for an optional local and
+client-CI recipe that compares client behavior against `satip-lab` and an
+independent SAT>IP implementation. Use that flow to identify shared assumptions;
+promote any non-spec behavior into this corpus only after trace-backed evidence.
+
 ## Adding Evidence
 
 Add one YAML file under `docs/compatibility/profiles/` per profile. Keep raw

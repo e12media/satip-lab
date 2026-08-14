@@ -228,6 +228,7 @@ func agentDocs() []AgentContextDoc {
 		{Name: "Agent playbook", Path: "docs/agent-playbook.md"},
 		{Name: "Catalogs", Path: "docs/catalog.md"},
 		{Name: "Compatibility corpus", Path: "docs/compatibility/servers.md"},
+		{Name: "Cross-implementation validation", Path: "docs/compatibility/cross-implementation.md"},
 		{Name: "Supported profile", Path: "docs/supported-profile.md"},
 		{Name: "CI integration", Path: "docs/ci-integration.md"},
 	}
